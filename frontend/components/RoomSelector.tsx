@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 
 interface RoomSelectorProps {
   username: string
@@ -13,22 +13,6 @@ interface RoomSelectorProps {
 export default function RoomSelector({ username, onCreateRoom, onJoinRoom, onLeaveRoom, existingRooms = [] }: RoomSelectorProps) {
   const [newRoomName, setNewRoomName] = useState('')
   const [joinRoomName, setJoinRoomName] = useState('')
-  const [availableRooms, setAvailableRooms] = useState<string[]>([])
-
-  useEffect(() => {
-    // Fetch available rooms from API
-    const fetchRooms = async () => {
-      try {
-        const response = await fetch('http://localhost:3001/api/rooms')
-        const data = await response.json()
-        const roomNames = data.rooms.map((r: { name: string }) => r.name)
-        setAvailableRooms(roomNames)
-      } catch (error) {
-        console.error('Error fetching rooms:', error)
-      }
-    }
-    fetchRooms()
-  }, [])
 
   const handleCreateRoom = (e: React.FormEvent) => {
     e.preventDefault()
@@ -49,9 +33,6 @@ export default function RoomSelector({ username, onCreateRoom, onJoinRoom, onLea
   const handleJoinExistingRoom = (roomName: string) => {
     onJoinRoom(roomName)
   }
-
-  // Filter out rooms user is already in
-  const roomsToShow = availableRooms.filter(r => !existingRooms.includes(r))
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 px-4 py-8">
@@ -140,55 +121,36 @@ export default function RoomSelector({ username, onCreateRoom, onJoinRoom, onLea
           </div>
         </div>
 
-        {/* Existing Rooms Section - Show below on mobile, or as a separate section */}
-        {(existingRooms.length > 0 || roomsToShow.length > 0) && (
+        {/* User's Rooms Section - Only show rooms the user has joined */}
+        {existingRooms.length > 0 && (
           <div className="border-t p-8">
-            {existingRooms.length > 0 && (
-              <div className="mb-6">
-                <h2 className="text-lg font-semibold text-gray-700 mb-3">Phòng của bạn</h2>
-                <div className="flex flex-wrap gap-2">
-                  {existingRooms.map((roomName) => (
-                    <div key={roomName} className="flex items-center gap-2">
-                      <button
-                        onClick={() => handleJoinExistingRoom(roomName)}
-                        className="px-4 py-2 bg-indigo-100 text-indigo-700 rounded-lg hover:bg-indigo-200 transition font-medium"
-                      >
-                        💬 {roomName}
-                      </button>
-                      {onLeaveRoom && (
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            onLeaveRoom(roomName)
-                          }}
-                          className="px-2 py-2 bg-red-100 text-red-700 rounded-lg hover:bg-red-200 transition text-sm"
-                          title="Rời phòng"
-                        >
-                          ✕
-                        </button>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {roomsToShow.length > 0 && (
-              <div>
-                <h2 className="text-lg font-semibold text-gray-700 mb-3">Phòng có sẵn</h2>
-                <div className="flex flex-wrap gap-2">
-                  {roomsToShow.map((roomName) => (
+            <div>
+              <h2 className="text-lg font-semibold text-gray-700 mb-3">Phòng của bạn</h2>
+              <div className="flex flex-wrap gap-2">
+                {existingRooms.map((roomName) => (
+                  <div key={roomName} className="flex items-center gap-2">
                     <button
-                      key={roomName}
                       onClick={() => handleJoinExistingRoom(roomName)}
-                      className="px-4 py-2 bg-purple-100 text-purple-700 rounded-lg hover:bg-purple-200 transition font-medium"
+                      className="px-4 py-2 bg-indigo-100 text-indigo-700 rounded-lg hover:bg-indigo-200 transition font-medium"
                     >
-                      📢 {roomName}
+                      💬 {roomName}
                     </button>
-                  ))}
-                </div>
+                    {onLeaveRoom && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          onLeaveRoom(roomName)
+                        }}
+                        className="px-2 py-2 bg-red-100 text-red-700 rounded-lg hover:bg-red-200 transition text-sm"
+                        title="Rời phòng"
+                      >
+                        ✕
+                      </button>
+                    )}
+                  </div>
+                ))}
               </div>
-            )}
+            </div>
           </div>
         )}
       </div>

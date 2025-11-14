@@ -347,7 +347,7 @@ export const handleUserLeave = (socket, data) => {
     if (index > -1) {
       roomData.users.splice(index, 1);
     }
-    
+
     // Thông báo users khác: user này đã rời khỏi
     const io = socket.server;
     io.to(roomName).emit('user:left', {
@@ -358,10 +358,10 @@ export const handleUserLeave = (socket, data) => {
       room: roomName
     });
 
-    // Nếu room trống, xóa room
+    // NOTE: Room is NOT deleted when empty - rooms persist until explicitly deleted by owner
+    // This allows users to refresh the page without losing their rooms
     if (roomData.users.length === 0) {
-      rooms.delete(roomName);
-      console.log(`🗑️  Room ${roomName} deleted (empty)`);
+      console.log(`ℹ️  Room ${roomName} is now empty but will persist`);
     }
   }
 
@@ -401,7 +401,7 @@ export const handleUserDisconnect = (socket) => {
         if (index > -1) {
           roomData.users.splice(index, 1);
         }
-        
+
         // Thông báo users khác: user này đã rời khỏi
         io.to(roomName).emit('user:left', {
           username: user.username,
@@ -411,10 +411,10 @@ export const handleUserDisconnect = (socket) => {
           room: roomName
         });
 
-        // Nếu room trống, xóa room
+        // NOTE: Room is NOT deleted when empty - rooms persist until explicitly deleted by owner
+        // This allows users to refresh the page without losing their rooms
         if (roomData.users.length === 0) {
-          rooms.delete(roomName);
-          console.log(`🗑️  Room ${roomName} deleted (empty)`);
+          console.log(`ℹ️  Room ${roomName} is now empty but will persist`);
         }
       }
     });
