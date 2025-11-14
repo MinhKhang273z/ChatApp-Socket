@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { io, Socket } from 'socket.io-client'
 import ChatRoom from '@/components/ChatRoom'
 import LoginForm from '@/components/LoginForm'
@@ -109,27 +109,31 @@ export default function Home() {
     }
   }, [])
 
-  const handleLogin = (username: string, room: string) => {
+  // Sử dụng useCallback để tránh re-render không cần thiết
+  const handleLogin = useCallback((username: string, room: string) => {
     if (!socket) return
 
     setUsername(username)
     setRoom(room)
     socket.emit('user:join', { username, room })
-  }
+  }, [socket])
 
-  const handleSendMessage = (text: string) => {
+  const handleSendMessage = useCallback((text: string) => {
     if (!socket || !text.trim()) return
     socket.emit('message:send', { text })
-  }
+  }, [socket])
 
-  const handleTyping = (isTyping: boolean) => {
+  const handleTyping = useCallback((isTyping: boolean) => {
     if (!socket) return
     if (isTyping) {
       socket.emit('typing:start')
     } else {
       socket.emit('typing:stop')
     }
-  }
+  }, [socket])
+
+  // Chuyển đổi Set thành Array với useMemo
+  const typingUsersArray = useMemo(() => Array.from(typingUsers), [typingUsers])
 
   if (!isConnected) {
     return (
@@ -152,7 +156,7 @@ export default function Home() {
       room={room}
       messages={messages}
       users={users}
-      typingUsers={Array.from(typingUsers)}
+      typingUsers={typingUsersArray}
       onSendMessage={handleSendMessage}
       onTyping={handleTyping}
       isConnected={isConnected}
