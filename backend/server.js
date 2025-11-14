@@ -5,6 +5,7 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import session from 'express-session';
 import passport from './config/passport.js';
+import mongoose from 'mongoose'; // <-- TÔI ĐÃ THÊM DÒNG NÀY
 
 // Import handlers và middleware
 import { setupSocketListeners, users, rooms } from './handlers/socketHandlers.js';
@@ -12,6 +13,15 @@ import { errorHandler, notFoundHandler } from './middleware/errorHandler.js';
 import userRoutes from './routes/userRoutes.js';
 
 dotenv.config();
+
+// --- KẾT NỐI MONGODB (TÔI ĐÃ DI CHUYỂN LÊN ĐÂY) ---
+// LƯU Ý: Sửa lại "cluster0.xxxxx.mongodb.net" cho đúng với địa chỉ của bạn
+const MONGO_URI = process.env.MONGO_URI || "mongodb+srv://phongnt0023_db_user:nE1JzK2vvkYoelE2@cluster0.xjjv2nb.mongodb.net/?appName=Cluster0";
+
+mongoose.connect(MONGO_URI)
+  .then(() => console.log('✅ Đã kết nối thành công tới MongoDB!'))
+  .catch((err) => console.error('Lỗi kết nối MongoDB:', err));
+// --------------------------------------------------
 
 const app = express();
 const httpServer = createServer(app);
@@ -42,8 +52,8 @@ app.use(passport.session());
 
 // Routes
 app.get('/health', (req, res) => {
-  res.json({ 
-    status: 'ok', 
+  res.json({
+    status: 'ok',
     message: 'Server is running',
     timestamp: new Date().toISOString()
   });
@@ -57,7 +67,7 @@ app.use('/api/auth', userRoutes);
  * Trả về danh sách tất cả users đang online
  */
 app.get('/api/users', (req, res) => {
-  res.json({ 
+  res.json({
     totalUsers: users.size,
     users: Array.from(users.values()).map(u => ({
       id: u.id,
@@ -90,7 +100,7 @@ app.get('/api/rooms', (req, res) => {
 io.on('connection', (socket) => {
   // Attach io instance to socket (dùng trong handlers)
   socket.server = io;
-  
+
   // Setup tất cả socket listeners
   setupSocketListeners(socket);
 });
@@ -105,4 +115,3 @@ httpServer.listen(PORT, () => {
   console.log(`📡 Socket.io server ready`);
   console.log(`🌍 CORS enabled for: ${process.env.FRONTEND_URL || "http://localhost:3000"}`);
 });
-

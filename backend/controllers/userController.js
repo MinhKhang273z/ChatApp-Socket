@@ -1,34 +1,23 @@
 // backend/controllers/userController.js
-import fs from 'fs';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
+import { User } from '../models/userModel.js'; // <-- Import khuôn User từ MongoDB
 
-const DB_FILE = './db.json';
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production';
 
-// Hàm tiện ích để đọc/ghi DB
-const readDB = () => {
-  if (!fs.existsSync(DB_FILE)) {
-    return { users: [], messages: [] };
-  }
-  const data = fs.readFileSync(DB_FILE, 'utf-8');
-  return JSON.parse(data);
-};
-
-const writeDB = (data) => {
-  fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2));
-};
+// (XÓA BỎ các hàm readDB và writeDB dùng 'fs')
 
 // Tạo JWT token
 const generateToken = (user) => {
   return jwt.sign(
-    { id: user.id, username: user.username, email: user.email },
+    // Chuyển user.id (từ Mongoose) thành user._id
+    { id: user._id, username: user.username, email: user.email },
     JWT_SECRET,
     { expiresIn: '7d' }
   );
 };
 
-// Controller cho API đăng ký
+// Controller cho API đăng ký (Đã nâng cấp)
 export const register = async (req, res) => {
   try {
     const { username, email, password } = req.body;
@@ -36,45 +25,41 @@ export const register = async (req, res) => {
     if (!username || !email || !password) {
       return res.status(400).json({ error: 'Tất cả các trường là bắt buộc' });
     }
-
     if (password.length < 6) {
       return res.status(400).json({ error: 'Mật khẩu phải có ít nhất 6 ký tự' });
     }
 
-    const db = readDB();
-    
-    // Kiểm tra username đã tồn tại
-    if (db.users.find(u => u.username === username)) {
-      return res.status(400).json({ error: 'Tên người dùng đã tồn tại' });
-    }
-
-    // Kiểm tra email đã tồn tại
-    if (db.users.find(u => u.email === email)) {
-      return res.status(400).json({ error: 'Email đã được sử dụng' });
+    // Kiểm tra username hoặc email đã tồn tại trong MongoDB
+    const existingUser = await User.findOne({ $or: [{ username }, { email }] });
+    if (existingUser) {
+      if (existingUser.username === username) {
+        return res.status(400).json({ error: 'Tên người dùng đã tồn tại' });
+      }
+      if (existingUser.email === email) {
+        return res.status(400).json({ error: 'Email đã được sử dụng' });
+      }
     }
 
     // Hash password
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    // Tạo user mới
-    const newUser = {
-      id: Date.now().toString(),
+    // Tạo user mới bằng "khuôn" User
+    const newUser = new User({
       username,
       email,
       password: hashedPassword,
-      createdAt: new Date().toISOString(),
       provider: 'local'
-    };
+    });
 
-    db.users.push(newUser);
-    writeDB(db);
+    // Lưu user mới vào MongoDB
+    await newUser.save();
 
     // Tạo token
     const token = generateToken(newUser);
 
     res.status(201).json({
       user: {
-        id: newUser.id,
+        id: newUser._id, // Dùng _id từ MongoDB
         username: newUser.username,
         email: newUser.email
       },
@@ -86,7 +71,7 @@ export const register = async (req, res) => {
   }
 };
 
-// Controller cho API đăng nhập
+// Controller cho API đăng nhập (Đã nâng cấp)
 export const login = async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -95,8 +80,8 @@ export const login = async (req, res) => {
       return res.status(400).json({ error: 'Email và mật khẩu là bắt buộc' });
     }
 
-    const db = readDB();
-    const user = db.users.find(u => u.email === email && u.provider === 'local');
+    // Tìm user trong MongoDB
+    const user = await User.findOne({ email: email, provider: 'local' });
 
     if (!user) {
       return res.status(401).json({ error: 'Email hoặc mật khẩu không đúng' });
@@ -113,7 +98,7 @@ export const login = async (req, res) => {
 
     res.status(200).json({
       user: {
-        id: user.id,
+        id: user._id, // Dùng _id từ MongoDB
         username: user.username,
         email: user.email
       },
@@ -125,39 +110,34 @@ export const login = async (req, res) => {
   }
 };
 
-// Controller cho Google OAuth callback
+// Controller cho Google OAuth callback (Đã nâng cấp)
 export const googleCallback = async (req, res) => {
   try {
-    // Passport sẽ set req.user là profile object trực tiếp
     const profile = req.user?.profile || req.user;
     
     if (!profile || !profile.emails || !profile.emails[0]) {
       return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/auth?error=google_auth_failed`);
     }
 
-    const db = readDB();
-    let user = db.users.find(u => u.email === profile.emails[0].value);
+    const email = profile.emails[0].value;
+    let user = await User.findOne({ email: email });
 
     if (!user) {
       // Tạo user mới từ Google
-      user = {
-        id: Date.now().toString(),
-        username: profile.displayName || profile.emails[0].value.split('@')[0],
-        email: profile.emails[0].value,
-        password: null,
-        createdAt: new Date().toISOString(),
+      user = new User({
+        username: profile.displayName || email.split('@')[0],
+        email: email,
         provider: 'google',
         googleId: profile.id,
         avatar: profile.photos?.[0]?.value || null
-      };
-      db.users.push(user);
-      writeDB(db);
+      });
+      await user.save(); // Lưu vào MongoDB
     } else if (user.provider !== 'google') {
-      // Cập nhật user hiện có với Google info
+      // Cập nhật user "local" hiện có với thông tin Google
       user.provider = 'google';
       user.googleId = profile.id;
       user.avatar = profile.photos?.[0]?.value || user.avatar;
-      writeDB(db);
+      await user.save(); // Cập nhật MongoDB
     }
 
     // Tạo token
@@ -171,18 +151,18 @@ export const googleCallback = async (req, res) => {
   }
 };
 
-// Lấy thông tin user hiện tại
-export const getCurrentUser = (req, res) => {
+// Lấy thông tin user hiện tại (Đã nâng cấp)
+export const getCurrentUser = async (req, res) => {
   try {
-    const db = readDB();
-    const user = db.users.find(u => u.id === req.user.id);
+    // req.user.id được lấy từ token (đã đổi thành _id)
+    const user = await User.findById(req.user.id).select('-password'); // Lấy user, bỏ trường password
 
     if (!user) {
       return res.status(404).json({ error: 'Không tìm thấy người dùng' });
     }
 
     res.status(200).json({
-      id: user.id,
+      id: user._id,
       username: user.username,
       email: user.email,
       avatar: user.avatar || null
