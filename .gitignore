@@ -37,3 +37,4 @@ build/
 # Railway
 .railway
 
+backend/db.json
