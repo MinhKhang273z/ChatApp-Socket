@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { io, Socket } from 'socket.io-client'
 import ChatRoom from '@/components/ChatRoom'
@@ -25,17 +25,31 @@ export default function Home() {
   const [socket, setSocket] = useState<Socket | null>(null)
   const [username, setUsername] = useState<string>('')
   const [token, setToken] = useState<string>('')
-  const [room, setRoom] = useState<string>('')
+  const [currentRoom, setCurrentRoom] = useState<string>('')
+  const [userRooms, setUserRooms] = useState<string[]>([])
+  const [roomCreatedBy, setRoomCreatedBy] = useState<string>('')
   const [isAuthenticated, setIsAuthenticated] = useState(false)
   const [isConnected, setIsConnected] = useState(false)
   const [messages, setMessages] = useState<Message[]>([])
   const [users, setUsers] = useState<string[]>([])
   const [typingUsers, setTypingUsers] = useState<Set<string>>(new Set())
+  const currentRoomRef = useRef<string>('')
 
-  // Check authentication on mount
+  // Update ref when currentRoom changes
+  useEffect(() => {
+    currentRoomRef.current = currentRoom
+  }, [currentRoom])
+
+  // Check authentication on mount and restore room state
   useEffect(() => {
     const storedToken = localStorage.getItem('token')
     const storedUsername = localStorage.getItem('username')
+    const storedCurrentRoom = localStorage.getItem('currentRoom')
+    const storedCurrentRoomUser = localStorage.getItem('currentRoomUser') // Username who owns currentRoom
+    const storedUserRooms = localStorage.getItem('userRooms')
+    const storedUserRoomsUser = localStorage.getItem('userRoomsUser') // Username who owns userRooms
+    const lastView = localStorage.getItem('lastView') // 'roomSelector' or 'chatRoom'
+    const lastViewUser = localStorage.getItem('lastViewUser') // Username who owns lastView
     const error = searchParams.get('error')
 
     if (error) {
@@ -46,6 +60,80 @@ export default function Home() {
       setToken(storedToken)
       setUsername(storedUsername)
       setIsAuthenticated(true)
+      
+      // Only restore data if it belongs to the current user
+      const isCurrentUserData = storedUsername === storedUserRoomsUser
+      
+      if (isCurrentUserData && storedUserRooms) {
+        try {
+          const rooms = JSON.parse(storedUserRooms)
+          // Only set userRooms if there are actually rooms
+          if (rooms && rooms.length > 0) {
+            setUserRooms(rooms)
+          } else {
+            // No rooms, clear everything
+            setUserRooms([])
+            localStorage.removeItem('userRooms')
+            localStorage.removeItem('userRoomsUser')
+          }
+        } catch (e) {
+          console.error('Error parsing stored rooms:', e)
+          setUserRooms([])
+          localStorage.removeItem('userRooms')
+          localStorage.removeItem('userRoomsUser')
+        }
+      } else {
+        // Clear old data from different user
+        setUserRooms([])
+        localStorage.removeItem('userRooms')
+        localStorage.removeItem('userRoomsUser')
+      }
+      
+      // Only restore currentRoom if:
+      // 1. It belongs to current user
+      // 2. Last view was chatRoom
+      // 3. User has rooms (userRooms is not empty)
+      const isCurrentUserRoom = storedUsername === storedCurrentRoomUser
+      const isCurrentUserLastView = storedUsername === lastViewUser
+      const hasUserRooms = isCurrentUserData && storedUserRooms && (() => {
+        try {
+          const rooms = JSON.parse(storedUserRooms)
+          return rooms && rooms.length > 0
+        } catch {
+          return false
+        }
+      })()
+      
+      if (isCurrentUserRoom && isCurrentUserLastView && storedCurrentRoom && 
+          lastView === 'chatRoom' && hasUserRooms) {
+        // Double check that the room is in userRooms
+        try {
+          const rooms = JSON.parse(storedUserRooms)
+          if (rooms && rooms.includes(storedCurrentRoom)) {
+            setCurrentRoom(storedCurrentRoom)
+          } else {
+            // Room not in userRooms, clear it
+            setCurrentRoom('')
+            localStorage.removeItem('currentRoom')
+            localStorage.removeItem('currentRoomUser')
+            localStorage.setItem('lastView', 'roomSelector')
+            localStorage.setItem('lastViewUser', storedUsername)
+          }
+        } catch {
+          setCurrentRoom('')
+          localStorage.removeItem('currentRoom')
+          localStorage.removeItem('currentRoomUser')
+          localStorage.setItem('lastView', 'roomSelector')
+          localStorage.setItem('lastViewUser', storedUsername)
+        }
+      } else {
+        // Clear old data from different user or no rooms
+        setCurrentRoom('')
+        localStorage.removeItem('currentRoom')
+        localStorage.removeItem('currentRoomUser')
+        localStorage.setItem('lastView', 'roomSelector')
+        localStorage.setItem('lastViewUser', storedUsername)
+      }
     }
   }, [searchParams])
 
@@ -68,6 +156,96 @@ export default function Home() {
     newSocket.on('connect', () => {
       console.log('Connected to server')
       setIsConnected(true)
+      
+      // Restore rooms from localStorage and rejoin them (only if they belong to current user)
+      const storedUserRooms = localStorage.getItem('userRooms')
+      const storedUserRoomsUser = localStorage.getItem('userRoomsUser')
+      const storedCurrentRoom = localStorage.getItem('currentRoom')
+      const storedCurrentRoomUser = localStorage.getItem('currentRoomUser')
+      const lastView = localStorage.getItem('lastView')
+      const lastViewUser = localStorage.getItem('lastViewUser')
+      
+      // Only restore if data belongs to current user AND user has rooms
+      if (storedUserRooms && storedUserRoomsUser === username) {
+        try {
+          const rooms = JSON.parse(storedUserRooms)
+          // Only proceed if user actually has rooms
+          if (rooms && Array.isArray(rooms) && rooms.length > 0) {
+            // Rejoin all rooms (with error handling)
+            rooms.forEach((roomName: string) => {
+              newSocket.emit('user:join', { username, room: roomName })
+            })
+            
+            // Set up error handler for rejoin failures
+            const rejoinErrorHandler = (error: { message: string }) => {
+              const errorMessage = error.message.toLowerCase()
+              if (errorMessage.includes('không tồn tại')) {
+                // Room doesn't exist, remove it from userRooms
+                const roomMatch = error.message.match(/phòng\s+"([^"]+)"/i) || 
+                                 error.message.match(/phòng\s+([^\s]+)/i)
+                if (roomMatch && roomMatch[1]) {
+                  const roomToRemove = roomMatch[1]
+                  setUserRooms((prev) => {
+                    const updated = prev.filter(r => r !== roomToRemove)
+                    localStorage.setItem('userRooms', JSON.stringify(updated))
+                    localStorage.setItem('userRoomsUser', username)
+                    return updated
+                  })
+                }
+              }
+            }
+            
+            // Temporarily add error handler for rejoin
+            newSocket.once('error', rejoinErrorHandler)
+            // Only restore current room if:
+            // 1. It belongs to current user
+            // 2. Last view was chatRoom
+            // 3. Room exists in user's rooms list
+            if (storedCurrentRoom && storedCurrentRoomUser === username && 
+                lastView === 'chatRoom' && lastViewUser === username && 
+                rooms.includes(storedCurrentRoom)) {
+              // Small delay to ensure rooms are joined first
+              setTimeout(() => {
+                setCurrentRoom(storedCurrentRoom)
+              }, 100)
+            } else {
+              // Don't restore currentRoom if conditions not met
+              setCurrentRoom('')
+            }
+          } else {
+            // User has no rooms, clear everything
+            setCurrentRoom('')
+            setUserRooms([])
+            localStorage.removeItem('userRooms')
+            localStorage.removeItem('userRoomsUser')
+            localStorage.removeItem('currentRoom')
+            localStorage.removeItem('currentRoomUser')
+            localStorage.setItem('lastView', 'roomSelector')
+            localStorage.setItem('lastViewUser', username)
+          }
+        } catch (e) {
+          console.error('Error parsing stored rooms:', e)
+          // Clear on error
+          setCurrentRoom('')
+          setUserRooms([])
+          localStorage.removeItem('userRooms')
+          localStorage.removeItem('userRoomsUser')
+          localStorage.removeItem('currentRoom')
+          localStorage.removeItem('currentRoomUser')
+          localStorage.setItem('lastView', 'roomSelector')
+          localStorage.setItem('lastViewUser', username)
+        }
+      } else {
+        // Data doesn't belong to current user, clear everything
+        setCurrentRoom('')
+        setUserRooms([])
+        localStorage.removeItem('userRooms')
+        localStorage.removeItem('userRoomsUser')
+        localStorage.removeItem('currentRoom')
+        localStorage.removeItem('currentRoomUser')
+        localStorage.setItem('lastView', 'roomSelector')
+        localStorage.setItem('lastViewUser', username)
+      }
     })
 
     newSocket.on('disconnect', () => {
@@ -77,61 +255,184 @@ export default function Home() {
 
     newSocket.on('error', (error: { message: string }) => {
       console.error('Socket error:', error)
-      alert(error.message)
-    })
-
-    newSocket.on('message:receive', (message: Message) => {
-      setMessages((prev) => [...prev, message])
-    })
-
-    newSocket.on('user:joined', (data: { username: string; message: string; timestamp: Date }) => {
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: `system-${Date.now()}`,
-          username: 'System',
-          text: data.message,
-          timestamp: new Date(data.timestamp),
-        },
-      ])
-    })
-
-    newSocket.on('user:left', (data: { username: string; message: string; timestamp: Date }) => {
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: `system-${Date.now()}`,
-          username: 'System',
-          text: data.message,
-          timestamp: new Date(data.timestamp),
-        },
-      ])
-    })
-
-    newSocket.on('room:info', (data: { room: string; users: string[]; messages: Message[] }) => {
-      setUsers(data.users)
-      if (data.messages && data.messages.length > 0) {
-        setMessages(data.messages.map((msg) => ({
-          ...msg,
-          timestamp: new Date(msg.timestamp),
-        })))
+      
+      // Check if error is about room not existing or already in room
+      const errorMessage = error.message.toLowerCase()
+      const isRoomNotExist = errorMessage.includes('không tồn tại')
+      const isAlreadyInRoom = errorMessage.includes('đã ở trong phòng')
+      
+      if (isRoomNotExist && currentRoomRef.current) {
+        // Room doesn't exist, remove it from userRooms and clear currentRoom
+        const roomToRemove = currentRoomRef.current
+        setUserRooms((prev) => {
+          const updated = prev.filter(r => r !== roomToRemove)
+          localStorage.setItem('userRooms', JSON.stringify(updated))
+          localStorage.setItem('userRoomsUser', username)
+          return updated
+        })
+        setCurrentRoom('')
+        localStorage.removeItem('currentRoom')
+        localStorage.removeItem('currentRoomUser')
+        localStorage.setItem('lastView', 'roomSelector')
+        localStorage.setItem('lastViewUser', username)
+        alert(error.message)
+      } else if (isAlreadyInRoom) {
+        // User already in room, just switch to it (don't show error)
+        // The handleJoinRoom should handle this, but if we get here, just switch
+        const roomMatch = error.message.match(/phòng\s+([^\s]+)/i)
+        if (roomMatch && roomMatch[1]) {
+          const roomName = roomMatch[1]
+          setCurrentRoom(roomName)
+          localStorage.setItem('currentRoom', roomName)
+          localStorage.setItem('currentRoomUser', username)
+          localStorage.setItem('lastView', 'chatRoom')
+          localStorage.setItem('lastViewUser', username)
+          // Request room info
+          newSocket.emit('user:getRoomInfo', { room: roomName })
+        }
+      } else {
+        // Other errors
+        alert(error.message)
+        if (currentRoomRef.current) {
+          setCurrentRoom('')
+          localStorage.setItem('lastView', 'roomSelector')
+          localStorage.setItem('lastViewUser', username)
+        }
       }
     })
 
-    newSocket.on('typing:start', (data: { username: string }) => {
-      setTypingUsers((prev) => {
-        const newSet = new Set(prev)
-        newSet.add(data.username)
-        return newSet
-      })
+    newSocket.on('message:receive', (message: Message & { room?: string }) => {
+      // Only show messages for current room
+      if (!message.room || message.room === currentRoomRef.current) {
+        setMessages((prev) => [...prev, message])
+      }
     })
 
-    newSocket.on('typing:stop', (data: { username: string }) => {
-      setTypingUsers((prev) => {
-        const newSet = new Set(prev)
-        newSet.delete(data.username)
-        return newSet
-      })
+    newSocket.on('user:joined', (data: { username: string; message: string; timestamp: Date; room?: string }) => {
+      // Only show join messages for current room
+      if (!data.room || data.room === currentRoomRef.current) {
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: `system-${Date.now()}`,
+            username: 'System',
+            text: data.message,
+            timestamp: new Date(data.timestamp),
+          },
+        ])
+      }
+    })
+
+    newSocket.on('user:left', (data: { username: string; message: string; timestamp: Date; room?: string }) => {
+      // Only show leave messages for current room
+      if (!data.room || data.room === currentRoomRef.current) {
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: `system-${Date.now()}`,
+            username: 'System',
+            text: data.message,
+            timestamp: new Date(data.timestamp),
+          },
+        ])
+      }
+    })
+
+    newSocket.on('room:created', (data: { room: string; message: string; timestamp: Date }) => {
+      // Show success notification
+      alert(data.message)
+      // Room info will be sent via room:info event
+    })
+
+    newSocket.on('room:info', (data: { room: string; users: string[]; messages: Message[]; createdBy?: string }) => {
+      // Only update if this is the current room
+      if (data.room === currentRoomRef.current) {
+        setUsers(data.users)
+        if (data.createdBy) {
+          setRoomCreatedBy(data.createdBy)
+        }
+        if (data.messages && data.messages.length > 0) {
+          setMessages(data.messages.map((msg) => ({
+            ...msg,
+            timestamp: new Date(msg.timestamp),
+          })))
+        } else {
+          setMessages([])
+        }
+      }
+    })
+
+    newSocket.on('room:deleted', (data: { room: string; message: string; timestamp: Date }) => {
+      // If the deleted room is the current room, go back to room selector
+      if (data.room === currentRoomRef.current) {
+        alert(data.message)
+        setCurrentRoom('')
+        setRoomCreatedBy('')
+        localStorage.setItem('lastView', 'roomSelector')
+        localStorage.setItem('lastViewUser', username)
+        localStorage.removeItem('currentRoom')
+        localStorage.removeItem('currentRoomUser')
+        setMessages([])
+        setUsers([])
+      }
+    })
+
+    newSocket.on('user:rooms', (data: { rooms: string[] }) => {
+      setUserRooms(data.rooms)
+      // Save to localStorage with username
+      localStorage.setItem('userRooms', JSON.stringify(data.rooms))
+      localStorage.setItem('userRoomsUser', username)
+      
+      // If current room is not in the list anymore, clear it
+      if (currentRoomRef.current && !data.rooms.includes(currentRoomRef.current)) {
+        setCurrentRoom('')
+        setRoomCreatedBy('')
+        localStorage.setItem('lastView', 'roomSelector')
+        localStorage.setItem('lastViewUser', username)
+        localStorage.removeItem('currentRoom')
+        localStorage.removeItem('currentRoomUser')
+      }
+    })
+
+    newSocket.on('room:left', (data: { room: string; remainingRooms: string[] }) => {
+      setUserRooms(data.remainingRooms)
+      // Save to localStorage with username
+      localStorage.setItem('userRooms', JSON.stringify(data.remainingRooms))
+      localStorage.setItem('userRoomsUser', username)
+      
+      // If we left the current room, switch to room selector
+      if (data.room === currentRoomRef.current) {
+        setCurrentRoom('')
+        setRoomCreatedBy('')
+        localStorage.setItem('lastView', 'roomSelector')
+        localStorage.setItem('lastViewUser', username)
+        localStorage.removeItem('currentRoom')
+        localStorage.removeItem('currentRoomUser')
+        setMessages([])
+        setUsers([])
+      }
+    })
+
+    newSocket.on('typing:start', (data: { username: string; room?: string }) => {
+      // Only show typing for current room
+      if (!data.room || data.room === currentRoomRef.current) {
+        setTypingUsers((prev) => {
+          const newSet = new Set(prev)
+          newSet.add(data.username)
+          return newSet
+        })
+      }
+    })
+
+    newSocket.on('typing:stop', (data: { username: string; room?: string }) => {
+      // Only show typing for current room
+      if (!data.room || data.room === currentRoomRef.current) {
+        setTypingUsers((prev) => {
+          const newSet = new Set(prev)
+          newSet.delete(data.username)
+          return newSet
+        })
+      }
     })
 
     setSocket(newSocket)
@@ -146,28 +447,129 @@ export default function Home() {
     setUsername(username)
     setToken(token)
     setIsAuthenticated(true)
+    // Clear any old data from previous user
+    localStorage.removeItem('currentRoom')
+    localStorage.removeItem('currentRoomUser')
+    localStorage.removeItem('userRooms')
+    localStorage.removeItem('userRoomsUser')
+    localStorage.setItem('lastView', 'roomSelector')
+    localStorage.setItem('lastViewUser', username)
   }, [])
 
-  // Handle room join
-  const handleJoinRoom = useCallback((roomName: string) => {
-    if (!socket) return
-    setRoom(roomName)
-    socket.emit('user:join', { username, room: roomName })
-  }, [socket, username])
-
-  const handleSendMessage = useCallback((text: string) => {
-    if (!socket || !text.trim()) return
-    socket.emit('message:send', { text })
-  }, [socket])
-
-  const handleTyping = useCallback((isTyping: boolean) => {
-    if (!socket) return
-    if (isTyping) {
-      socket.emit('typing:start')
-    } else {
-      socket.emit('typing:stop')
+  // Handle logout
+  const handleLogout = useCallback(() => {
+    localStorage.removeItem('token')
+    localStorage.removeItem('username')
+    localStorage.removeItem('currentRoom')
+    localStorage.removeItem('currentRoomUser')
+    localStorage.removeItem('userRooms')
+    localStorage.removeItem('userRoomsUser')
+    localStorage.removeItem('lastView')
+    localStorage.removeItem('lastViewUser')
+    setUsername('')
+    setToken('')
+    setIsAuthenticated(false)
+    setCurrentRoom('')
+    setUserRooms([])
+    setMessages([])
+    setUsers([])
+    if (socket) {
+      socket.close()
+      setSocket(null)
     }
   }, [socket])
+
+  // Handle create room
+  const handleCreateRoom = useCallback((roomName: string) => {
+    if (!socket) return
+    setCurrentRoom(roomName)
+    setRoomCreatedBy('') // Will be set when room:info is received
+    localStorage.setItem('currentRoom', roomName)
+    localStorage.setItem('currentRoomUser', username)
+    localStorage.setItem('lastView', 'chatRoom')
+    localStorage.setItem('lastViewUser', username)
+    setMessages([]) // Clear messages when switching rooms
+    setUsers([]) // Clear users when switching rooms
+    socket.emit('room:create', { username, room: roomName })
+  }, [socket, username])
+
+  // Handle room join (only join existing rooms)
+  const handleJoinRoom = useCallback((roomName: string) => {
+    if (!socket) return
+    
+    // Check if user is already in this room
+    if (userRooms.includes(roomName)) {
+      // User already in room, just switch to it
+      setCurrentRoom(roomName)
+      setRoomCreatedBy('') // Will be set when room:info is received
+      localStorage.setItem('currentRoom', roomName)
+      localStorage.setItem('currentRoomUser', username)
+      localStorage.setItem('lastView', 'chatRoom')
+      localStorage.setItem('lastViewUser', username)
+      setMessages([]) // Clear messages when switching rooms
+      setUsers([]) // Clear users when switching rooms
+      // Request room info for the room we're already in
+      socket.emit('user:getRoomInfo', { room: roomName })
+      return
+    }
+    
+    // User not in room yet, join it
+    setCurrentRoom(roomName)
+    setRoomCreatedBy('') // Will be set when room:info is received
+    localStorage.setItem('currentRoom', roomName)
+    localStorage.setItem('currentRoomUser', username)
+    localStorage.setItem('lastView', 'chatRoom')
+    localStorage.setItem('lastViewUser', username)
+    setMessages([]) // Clear messages when switching rooms
+    setUsers([]) // Clear users when switching rooms
+    socket.emit('user:join', { username, room: roomName })
+  }, [socket, username, userRooms])
+
+  // Handle room leave (from current room)
+  const handleLeaveRoom = useCallback(() => {
+    if (!socket || !currentRoom) return
+    socket.emit('user:leave', { room: currentRoom })
+    // The room:left event will handle clearing the current room
+  }, [socket, currentRoom])
+
+  // Handle room delete (only room owner can delete)
+  const handleDeleteRoom = useCallback(() => {
+    if (!socket || !currentRoom) return
+    if (window.confirm(`Bạn có chắc chắn muốn xóa phòng "${currentRoom}"? Tất cả thành viên sẽ bị đưa ra khỏi phòng.`)) {
+      socket.emit('room:delete', { username, room: currentRoom })
+    }
+  }, [socket, currentRoom, username])
+
+  // Handle room leave (from room selector)
+  const handleLeaveRoomFromSelector = useCallback((roomName: string) => {
+    if (!socket) return
+    socket.emit('user:leave', { room: roomName })
+    // The room:left event will handle updating userRooms
+  }, [socket])
+
+  // Handle add room (go back to room selector)
+  const handleAddRoom = useCallback(() => {
+    setCurrentRoom('')
+    setRoomCreatedBy('')
+    localStorage.setItem('lastView', 'roomSelector')
+    localStorage.setItem('lastViewUser', username)
+    // Don't remove currentRoom from localStorage, keep it so user can come back
+    // Keep messages and users for when they come back
+  }, [username])
+
+  const handleSendMessage = useCallback((text: string) => {
+    if (!socket || !text.trim() || !currentRoom) return
+    socket.emit('message:send', { text, room: currentRoom })
+  }, [socket, currentRoom])
+
+  const handleTyping = useCallback((isTyping: boolean) => {
+    if (!socket || !currentRoom) return
+    if (isTyping) {
+      socket.emit('typing:start', { room: currentRoom })
+    } else {
+      socket.emit('typing:stop', { room: currentRoom })
+    }
+  }, [socket, currentRoom])
 
   // Chuyển đổi Set thành Array với useMemo
   const typingUsersArray = useMemo(() => {
@@ -175,6 +577,13 @@ export default function Home() {
     typingUsers.forEach(user => arr.push(user))
     return arr
   }, [typingUsers])
+
+  // Request user rooms when socket connects
+  useEffect(() => {
+    if (socket && isConnected) {
+      socket.emit('user:getRooms')
+    }
+  }, [socket, isConnected])
 
   // Show auth form if not authenticated
   if (!isAuthenticated) {
@@ -194,20 +603,25 @@ export default function Home() {
   }
 
   // Show room selector if no room selected
-  if (!room) {
-    return <RoomSelector username={username} onJoinRoom={handleJoinRoom} />
+  if (!currentRoom) {
+    return <RoomSelector username={username} onCreateRoom={handleCreateRoom} onJoinRoom={handleJoinRoom} onLeaveRoom={handleLeaveRoomFromSelector} existingRooms={userRooms} />
   }
 
   // Show chat room
   return (
     <ChatRoom
       username={username}
-      room={room}
+      room={currentRoom}
       messages={messages}
       users={users}
       typingUsers={typingUsersArray}
+      roomCreatedBy={roomCreatedBy}
       onSendMessage={handleSendMessage}
       onTyping={handleTyping}
+      onLeaveRoom={handleLeaveRoom}
+      onDeleteRoom={handleDeleteRoom}
+      onAddRoom={handleAddRoom}
+      onLogout={handleLogout}
       isConnected={isConnected}
     />
   )

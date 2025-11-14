@@ -36,9 +36,11 @@ export default function MessageList({ messages, currentUsername, typingUsers }: 
       style={{ minHeight: '400px' }}
     >
       {messages.length === 0 ? (
-        <div className="text-center text-gray-500 mt-8">
-          <p className="text-lg">💬 Chưa có tin nhắn nào</p>
-          <p className="text-sm mt-2">Hãy bắt đầu cuộc trò chuyện!</p>
+        <div className="flex-1 flex items-center justify-center">
+          <div className="text-center">
+            <p className="text-gray-400 text-lg">Chưa có tin nhắn nào</p>
+            <p className="text-gray-400 text-sm mt-2">Hãy bắt đầu cuộc trò chuyện!</p>
+          </div>
         </div>
       ) : (
         messages.map((message) => {
