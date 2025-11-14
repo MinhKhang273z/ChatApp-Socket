@@ -191,25 +191,6 @@ App (page.tsx)
 - Dữ liệu tối thiểu trong socket events
 - Connection pooling
 
-## Kiến trúc Triển khai
-
-```
-┌─────────────────────────────────────────┐
-│           Vercel (Frontend)             │
-│  - Next.js static/SSR                   │
-│  - CDN distribution                     │
-│  - Auto-scaling                         │
-└─────────────────────────────────────────┘
-                    │
-                    │ HTTPS
-                    │
-┌─────────────────────────────────────────┐
-│         Railway (Backend)               │
-│  - Node.js server                       │
-│  - Socket.io WebSocket                  │
-│  - Persistent connections               │
-└─────────────────────────────────────────┘
-```
 
 ## Cải tiến Tương lai
 

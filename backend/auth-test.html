@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Auth Test</title>
+</head>
+<body>
+    <h1>Authentication Test</h1>
+    
+    <div>
+        <h2>Login</h2>
+        <input type="email" id="email" placeholder="email" value="test@test.com">
+        <input type="password" id="password" placeholder="password" value="123456">
+        <button onclick="testLogin()">Login</button>
+        <div id="loginResult"></div>
+    </div>
+
+    <div>
+        <h2>Register</h2>
+        <input type="text" id="username" placeholder="username" value="newuser">
+        <input type="email" id="regEmail" placeholder="email" value="newuser@test.com">
+        <input type="password" id="regPassword" placeholder="password" value="123456">
+        <button onclick="testRegister()">Register</button>
+        <div id="registerResult"></div>
+    </div>
+
+    <script>
+        const API_URL = 'http://localhost:3001';
+
+        async function testLogin() {
+            const email = document.getElementById('email').value;
+            const password = document.getElementById('password').value;
+            const resultDiv = document.getElementById('loginResult');
+            
+            try {
+                console.log('Attempting login with:', {email, password});
+                const response = await fetch(`${API_URL}/api/auth/login`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        email,
+                        password,
+                    }),
+                });
+
+                console.log('Response status:', response.status);
+                const data = await response.json();
+                console.log('Response data:', data);
+
+                if (!response.ok) {
+                    resultDiv.innerHTML = `<p style="color: red;">Error: ${data.error}</p>`;
+                    return;
+                }
+
+                resultDiv.innerHTML = `<p style="color: green;">Success! Token: ${data.token.substring(0, 50)}...</p>`;
+                localStorage.setItem('token', data.token);
+                localStorage.setItem('username', data.user.username);
+            } catch (error) {
+                console.error('Login error:', error);
+                resultDiv.innerHTML = `<p style="color: red;">Error: ${error.message}</p>`;
+            }
+        }
+
+        async function testRegister() {
+            const username = document.getElementById('username').value;
+            const email = document.getElementById('regEmail').value;
+            const password = document.getElementById('regPassword').value;
+            const resultDiv = document.getElementById('registerResult');
+            
+            try {
+                console.log('Attempting register with:', {username, email, password});
+                const response = await fetch(`${API_URL}/api/auth/register`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        username,
+                        email,
+                        password,
+                    }),
+                });
+
+                console.log('Response status:', response.status);
+                const data = await response.json();
+                console.log('Response data:', data);
+
+                if (!response.ok) {
+                    resultDiv.innerHTML = `<p style="color: red;">Error: ${data.error}</p>`;
+                    return;
+                }
+
+                resultDiv.innerHTML = `<p style="color: green;">Success! Token: ${data.token.substring(0, 50)}...</p>`;
+                localStorage.setItem('token', data.token);
+                localStorage.setItem('username', data.user.username);
+            } catch (error) {
+                console.error('Register error:', error);
+                resultDiv.innerHTML = `<p style="color: red;">Error: ${error.message}</p>`;
+            }
+        }
+    </script>
+</body>
+</html>

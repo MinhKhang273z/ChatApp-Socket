@@ -3,10 +3,13 @@ import { createServer } from 'http';
 import { Server } from 'socket.io';
 import cors from 'cors';
 import dotenv from 'dotenv';
+import session from 'express-session';
+import passport from './config/passport.js';
 
 // Import handlers và middleware
 import { setupSocketListeners, users, rooms } from './handlers/socketHandlers.js';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler.js';
+import userRoutes from './routes/userRoutes.js';
 
 dotenv.config();
 
@@ -29,6 +32,13 @@ app.use(cors({
   credentials: true
 }));
 app.use(express.json());
+app.use(session({
+  secret: process.env.SESSION_SECRET || 'your-session-secret',
+  resave: false,
+  saveUninitialized: false
+}));
+app.use(passport.initialize());
+app.use(passport.session());
 
 // Routes
 app.get('/health', (req, res) => {
@@ -38,6 +48,9 @@ app.get('/health', (req, res) => {
     timestamp: new Date().toISOString()
   });
 });
+
+// Auth routes
+app.use('/api/auth', userRoutes);
 
 /**
  * GET /api/users

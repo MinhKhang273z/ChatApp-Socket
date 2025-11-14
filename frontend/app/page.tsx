@@ -1,9 +1,11 @@
 'use client'
 
 import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { io, Socket } from 'socket.io-client'
 import ChatRoom from '@/components/ChatRoom'
-import LoginForm from '@/components/LoginForm'
+import AuthForm from '@/components/AuthForm'
+import RoomSelector from '@/components/RoomSelector'
 
 interface Message {
   id: string
@@ -19,15 +21,38 @@ interface User {
 }
 
 export default function Home() {
+  const searchParams = useSearchParams()
   const [socket, setSocket] = useState<Socket | null>(null)
   const [username, setUsername] = useState<string>('')
+  const [token, setToken] = useState<string>('')
   const [room, setRoom] = useState<string>('')
+  const [isAuthenticated, setIsAuthenticated] = useState(false)
   const [isConnected, setIsConnected] = useState(false)
   const [messages, setMessages] = useState<Message[]>([])
   const [users, setUsers] = useState<string[]>([])
   const [typingUsers, setTypingUsers] = useState<Set<string>>(new Set())
 
+  // Check authentication on mount
   useEffect(() => {
+    const storedToken = localStorage.getItem('token')
+    const storedUsername = localStorage.getItem('username')
+    const error = searchParams.get('error')
+
+    if (error) {
+      alert(`Lỗi: ${decodeURIComponent(error)}`)
+    }
+
+    if (storedToken && storedUsername) {
+      setToken(storedToken)
+      setUsername(storedUsername)
+      setIsAuthenticated(true)
+    }
+  }, [searchParams])
+
+  useEffect(() => {
+    // Only initialize socket if authenticated
+    if (!isAuthenticated) return
+
     // Initialize socket connection
     const socketUrl = process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:3001'
     const newSocket = io(socketUrl, {
@@ -35,6 +60,9 @@ export default function Home() {
       reconnection: true,
       reconnectionDelay: 1000,
       reconnectionAttempts: 5,
+      auth: {
+        token: token
+      }
     })
 
     newSocket.on('connect', () => {
@@ -91,7 +119,11 @@ export default function Home() {
     })
 
     newSocket.on('typing:start', (data: { username: string }) => {
-      setTypingUsers((prev) => new Set([...prev, data.username]))
+      setTypingUsers((prev) => {
+        const newSet = new Set(prev)
+        newSet.add(data.username)
+        return newSet
+      })
     })
 
     newSocket.on('typing:stop', (data: { username: string }) => {
@@ -107,16 +139,21 @@ export default function Home() {
     return () => {
       newSocket.close()
     }
+  }, [isAuthenticated, token])
+
+  // Handle authentication success
+  const handleAuthSuccess = useCallback((username: string, token: string) => {
+    setUsername(username)
+    setToken(token)
+    setIsAuthenticated(true)
   }, [])
 
-  // Sử dụng useCallback để tránh re-render không cần thiết
-  const handleLogin = useCallback((username: string, room: string) => {
+  // Handle room join
+  const handleJoinRoom = useCallback((roomName: string) => {
     if (!socket) return
-
-    setUsername(username)
-    setRoom(room)
-    socket.emit('user:join', { username, room })
-  }, [socket])
+    setRoom(roomName)
+    socket.emit('user:join', { username, room: roomName })
+  }, [socket, username])
 
   const handleSendMessage = useCallback((text: string) => {
     if (!socket || !text.trim()) return
@@ -133,23 +170,35 @@ export default function Home() {
   }, [socket])
 
   // Chuyển đổi Set thành Array với useMemo
-  const typingUsersArray = useMemo(() => Array.from(typingUsers), [typingUsers])
+  const typingUsersArray = useMemo(() => {
+    const arr: string[] = []
+    typingUsers.forEach(user => arr.push(user))
+    return arr
+  }, [typingUsers])
 
+  // Show auth form if not authenticated
+  if (!isAuthenticated) {
+    return <AuthForm onAuthSuccess={handleAuthSuccess} />
+  }
+
+  // Show loading if socket not connected yet
   if (!isConnected) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100">
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-          <p className="text-gray-600">Connecting to server...</p>
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-white mx-auto mb-4"></div>
+          <p className="text-white">Đang kết nối đến server...</p>
         </div>
       </div>
     )
   }
 
-  if (!username || !room) {
-    return <LoginForm onLogin={handleLogin} />
+  // Show room selector if no room selected
+  if (!room) {
+    return <RoomSelector username={username} onJoinRoom={handleJoinRoom} />
   }
 
+  // Show chat room
   return (
     <ChatRoom
       username={username}
