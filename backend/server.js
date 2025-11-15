@@ -1,22 +1,35 @@
+// backend/server.js 
+
+// --- CẤU HÌNH DOTENV (CHỈ 1 LẦN) ---
+import dotenv from 'dotenv';
+dotenv.config();
+
+// --- IMPORTS BẮT BUỘC ---
+import http from 'http';
 import express from 'express';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
 import cors from 'cors';
-import dotenv from 'dotenv';
-import session from 'express-session';
-import passport from './config/passport.js';
-import mongoose from 'mongoose'; // <-- TÔI ĐÃ THÊM DÒNG NÀY
+import mongoose from 'mongoose';
+
+// 🟢 IMPORTS CẦN THIẾT CHO PASSPORT VÀ SESSION
+import passport from 'passport'; 
+import session from 'express-session'; // Cần import session
+import configurePassport from './config/passport.js'; 
 
 // Import handlers và middleware
-import { setupSocketListeners, users, rooms } from './handlers/socketHandlers.js';
+import { setupSocketListeners, users } from './handlers/socketHandlers.js'; 
 import { errorHandler, notFoundHandler } from './middleware/errorHandler.js';
 import userRoutes from './routes/userRoutes.js';
 
-dotenv.config();
+// --- KẾT NỐI MONGODB ---
+const MONGO_URI = process.env.MONGO_URI; 
 
-// --- KẾT NỐI MONGODB (TÔI ĐÃ DI CHUYỂN LÊN ĐÂY) ---
-// LƯU Ý: Sửa lại "cluster0.xxxxx.mongodb.net" cho đúng với địa chỉ của bạn
-const MONGO_URI = process.env.MONGO_URI || "mongodb+srv://phongnt0023_db_user:nE1JzK2vvkYoelE2@cluster0.xjjv2nb.mongodb.net/?appName=Cluster0";
+if (!MONGO_URI) {
+  console.error("LỖI NGHIÊM TRỌNG: MONGO_URI không được tìm thấy trong file .env");
+  console.error("Hãy đảm bảo file .env tồn tại trong thư mục 'backend' và đã có MONGO_URI.");
+  process.exit(1); 
+}
 
 mongoose.connect(MONGO_URI)
   .then(() => console.log('✅ Đã kết nối thành công tới MongoDB!'))
@@ -27,7 +40,7 @@ const app = express();
 const httpServer = createServer(app);
 const PORT = process.env.PORT || 3001;
 
-// CORS configuration
+// CORS configuration for Socket.io
 const io = new Server(httpServer, {
   cors: {
     origin: process.env.FRONTEND_URL || "http://localhost:3000",
@@ -36,21 +49,32 @@ const io = new Server(httpServer, {
   }
 });
 
-// Middleware
+// --- Middleware ---
 app.use(cors({
   origin: process.env.FRONTEND_URL || "http://localhost:3000",
   credentials: true
 }));
 app.use(express.json());
-app.use(session({
-  secret: process.env.SESSION_SECRET || 'your-session-secret',
-  resave: false,
-  saveUninitialized: false
-}));
-app.use(passport.initialize());
-app.use(passport.session());
 
-// Routes
+// 🟢 CẤU HÌNH SESSION
+app.use(session({
+    secret: process.env.SESSION_SECRET || 'a-very-secret-key-for-session', // Đặt secret vào .env
+    resave: false,
+    saveUninitialized: false,
+    cookie: { 
+        maxAge: 24 * 60 * 60 * 1000, // 24 giờ
+        secure: process.env.NODE_ENV === 'production' // true chỉ khi ở môi trường production
+    }
+}));
+
+// 🟢 CẤU HÌNH PASSPORT
+configurePassport(); 
+
+// Khởi tạo Passport và Session
+app.use(passport.initialize()); 
+app.use(passport.session()); // RẤT QUAN TRỌNG CHO GOOGLE AUTH
+
+// --- Routes ---
 app.get('/health', (req, res) => {
   res.json({
     status: 'ok',
@@ -63,8 +87,7 @@ app.get('/health', (req, res) => {
 app.use('/api/auth', userRoutes);
 
 /**
- * GET /api/users
- * Trả về danh sách tất cả users đang online
+ * GET /api/users (Lấy danh sách user đang online)
  */
 app.get('/api/users', (req, res) => {
   res.json({
@@ -72,40 +95,18 @@ app.get('/api/users', (req, res) => {
     users: Array.from(users.values()).map(u => ({
       id: u.id,
       username: u.username,
-      room: u.room,
       joinedAt: u.joinedAt
     }))
   });
 });
 
-/**
- * GET /api/rooms
- * Trả về danh sách tất cả rooms và info
- */
-app.get('/api/rooms', (req, res) => {
-  const roomsData = Array.from(rooms.entries()).map(([roomName, roomData]) => ({
-    name: roomName,
-    totalUsers: roomData.users.length,
-    users: roomData.users.map(u => u.username),
-    totalMessages: roomData.messages.length
-  }));
-
-  res.json({
-    totalRooms: rooms.size,
-    rooms: roomsData
-  });
-});
-
 // Socket.io connection handling
 io.on('connection', (socket) => {
-  // Attach io instance to socket (dùng trong handlers)
   socket.server = io;
-
-  // Setup tất cả socket listeners
   setupSocketListeners(socket);
 });
 
-// Error handling middleware (phải ở cuối các routes)
+// Error handling middleware
 app.use(notFoundHandler);
 app.use(errorHandler);
 

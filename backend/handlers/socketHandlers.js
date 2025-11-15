@@ -1,179 +1,194 @@
 // backend/handlers/socketHandlers.js
 /**
  * Socket.io Event Handlers
- * NÂNG CẤP: Đã kết nối với MongoDB
+ * NÂNG CẤP CUỐI: Đã lưu Room (Phòng) vào MongoDB VĨNH VIỄN
  */
 
-import { Message } from '../models/messageModel.js'; // <-- Import khuôn Message
+import { Message } from '../models/messageModel.js';
+import { Room } from '../models/roomModel.js'; 
 
+// Store connected users: Map<socketId, userInfo>
+// (Giữ nguyên để quản lý user TRỰC TUYẾN)
 export const users = new Map();
-export const rooms = new Map();
 
 /**
- * Xử lý khi user tạo phòng mới
+ * Helper function: Lấy danh sách user đang online trong 1 phòng
  */
-export const handleRoomCreate = async (socket, data) => { // Thêm "async"
-  const { username, room } = data;
-  
-  if (!username || !username.trim()) { /* ... */ return; }
-  if (!room || !room.trim()) { /* ... */ return; }
-
-  const roomName = room.trim();
-  const userName = username.trim();
-
-  if (rooms.has(roomName)) { /* ... */ return; }
-
-  let user = users.get(socket.id);
-  if (!user) {
-    user = {
-      id: socket.id,
-      username: userName,
-      rooms: new Set(),
-      joinedAt: new Date()
-    };
-    users.set(socket.id, user);
-  }
-
-  if (user.rooms.has(roomName)) { /* ... */ return; }
-
-  rooms.set(roomName, {
-    users: [],
-    messages: [], // Không còn dùng, nhưng giữ lại
-    createdAt: new Date(),
-    createdBy: userName
-  });
-
-  user.rooms.add(roomName);
-  socket.join(roomName);
-
-  const roomData = rooms.get(roomName);
-  roomData.users.push({
-    id: socket.id,
-    username: userName,
-    joinedAt: new Date()
-  });
-
-  socket.emit('room:created', { /* ... */ });
-  socket.to(roomName).emit('user:joined', { /* ... */ });
-
-  // Khi tạo phòng mới, lịch sử chat luôn là mảng rỗng
-  socket.emit('room:info', {
-    room: roomName,
-    totalUsers: roomData.users.length,
-    users: roomData.users.map(u => u.username),
-    messages: [], // Gửi mảng rỗng
-    createdBy: roomData.createdBy
-  });
-
-  socket.emit('user:rooms', { /* ... */ });
-  console.log(`✅ ${userName} created and joined room: ${roomName} ...`);
+const getOnlineUsersInRoom = (roomName) => {
+  return Array.from(users.values())
+    .filter(u => u.rooms.has(roomName))
+    .map(u => u.username);
 };
 
 /**
- * Xử lý khi user join room (Đã nâng cấp)
+ * Xử lý khi user tạo phòng mới (ĐÃ NÂNG CẤP)
+ * - Sẽ LƯU phòng vào MongoDB
  */
-export const handleUserJoin = async (socket, data) => { // Thêm "async"
+export const handleRoomCreate = async (socket, data) => {
   const { username, room } = data;
-  
   if (!username || !username.trim()) { /* ... */ return; }
   if (!room || !room.trim()) { /* ... */ return; }
 
   const roomName = room.trim();
   const userName = username.trim();
 
-  if (!rooms.has(roomName)) { /* ... */ return; }
+  try {
+    // Kiểm tra phòng trong MONGODB
+    const existingRoom = await Room.findOne({ name: roomName });
+    if (existingRoom) {
+      socket.emit('error', { message: `Phòng "${roomName}" đã tồn tại.` });
+      return;
+    }
 
-  let user = users.get(socket.id);
-  if (!user) { /* ... (Tạo user như cũ) */ }
+    // (User creation... giữ nguyên)
+    let user = users.get(socket.id);
+    if (!user) {
+      user = {
+        id: socket.id,
+        username: userName,
+        rooms: new Set(),
+        joinedAt: new Date()
+      };
+      users.set(socket.id, user);
+    }
+    if (user.rooms.has(roomName)) { /* ... */ return; }
+
+    // Tạo phòng mới trong MONGODB
+    const newRoom = new Room({
+      name: roomName,
+      createdBy: userName
+    });
+    const savedRoom = await newRoom.save();
+
+    // (Add room to user in-memory... giữ nguyên)
+    user.rooms.add(roomName);
+    socket.join(roomName);
+
+    // (Emit room:created... giữ nguyên)
+    socket.emit('room:created', {
+      room: savedRoom.name,
+      message: `Đã tạo phòng ${savedRoom.name}`,
+      timestamp: new Date()
+    });
+    
+    // (Emit user:joined... giữ nguyên)
+    socket.to(roomName).emit('user:joined', { /* ... (như cũ) */ });
+
+    // Gửi thông tin phòng (với 0 tin nhắn)
+    socket.emit('room:info', {
+      room: savedRoom.name,
+      totalUsers: 1, // Chỉ có người tạo
+      users: [userName], // Chỉ có người tạo
+      messages: [], // Phòng mới, chưa có tin nhắn
+      createdBy: savedRoom.createdBy
+    });
+
+    // Gọi hàm để lấy danh sách phòng mới nhất từ DB
+    await handleGetUserRooms(socket); 
+
+    console.log(`✅ ${userName} created room in DB: ${roomName}`);
+
+  } catch (err) {
+    console.error('Lỗi khi tạo phòng:', err);
+    // Lỗi "duplicate key" (trùng tên phòng) thường xảy ra ở đây
+    if (err.code === 11000) {
+      socket.emit('error', { message: `Phòng "${roomName}" đã tồn tại.` });
+    } else {
+      socket.emit('error', { message: 'Không thể tạo phòng' });
+    }
+  }
+};
+
+/**
+ * Xử lý khi user join room (ĐÃ NÂNG CẤP)
+ * - Sẽ kiểm tra phòng trong MongoDB
+ */
+export const handleUserJoin = async (socket, data) => {
+  const { username, room } = data;
+  if (!username || !username.trim()) { /* ... */ return; }
+  if (!room || !room.trim()) { /* ... */ return; }
+
+  const roomName = room.trim();
+  const userName = username.trim();
 
   try {
-    // Check if user already in this room
-    if (user.rooms.has(roomName)) {
-      const roomData = rooms.get(roomName);
-      
-      const messageHistory = await Message.find({ room: roomName })
-                                         .sort({ timestamp: -1 })
-                                         .limit(50)
-                                         .sort({ timestamp: 1 });
+    // Kiểm tra phòng trong MONGODB
+    const roomFromDB = await Room.findOne({ name: roomName });
+    if (!roomFromDB) {
+      socket.emit('error', { message: `Phòng "${roomName}" không tồn tại.` });
+      return;
+    }
 
-      socket.emit('room:info', {
-        room: roomName,
-        totalUsers: roomData.users.length,
-        users: roomData.users.map(u => u.username),
-        messages: messageHistory, // <-- DÙNG LỊCH SỬ TỪ DB
-        createdBy: roomData.createdBy
-      });
-      
-      socket.emit('user:rooms', { /* ... */ });
+    // (Get/create user... giữ nguyên)
+    let user = users.get(socket.id);
+    if (!user) { 
+      user = {
+        id: socket.id,
+        username: userName,
+        rooms: new Set(),
+        joinedAt: new Date()
+      };
+      users.set(socket.id, user);
+    }
+
+    // (Check if user already in this room in-memory... giữ nguyên)
+    if (user.rooms.has(roomName)) {
+      // Chỉ cần gọi lại hàm này để lấy thông tin phòng mới nhất
+      await handleGetRoomInfo(socket, { room: roomName }); 
+      await handleGetUserRooms(socket); // Cập nhật danh sách phòng
       console.log(`✅ ${userName} switched to already joined room: ${roomName}`);
       return;
     }
 
+    // Thêm user vào danh sách "members" trong MONGODB
+    await Room.updateOne({ name: roomName }, { $addToSet: { members: userName } });
+
+    // (Add room to user in-memory... giữ nguyên)
     user.rooms.add(roomName);
     socket.join(roomName);
+    
+    // (Emit user:joined... giữ nguyên)
+    socket.to(roomName).emit('user:joined', { /* ... (như cũ) */ });
 
-    const roomData = rooms.get(roomName);
-    const existingUserIndex = roomData.users.findIndex(u => u.id === socket.id);
-    if (existingUserIndex === -1) { /* ... (Thêm user như cũ) */ }
+    // Lấy lịch sử chat và thông tin phòng
+    await handleGetRoomInfo(socket, { room: roomName }); 
+    await handleGetUserRooms(socket); // Cập nhật danh sách phòng
 
-    socket.to(roomName).emit('user:joined', { /* ... */ });
+    console.log(`✅ ${userName} joined room in DB: ${roomName}`);
 
-    // Lấy 50 tin nhắn cuối từ DB
-    const messageHistory = await Message.find({ room: roomName })
-                                       .sort({ timestamp: -1 })
-                                       .limit(50)
-                                       .sort({ timestamp: 1 });
-
-    socket.emit('room:info', {
-      room: roomName,
-      totalUsers: roomData.users.length,
-      users: roomData.users.map(u => u.username),
-      messages: messageHistory, // <-- DÙNG LỊCH SỬ TỪ DB
-      createdBy: roomData.createdBy
-    });
-
-    socket.emit('user:rooms', { /* ... */ });
-    console.log(`✅ ${userName} join room: ${roomName} ...`);
-  
   } catch (err) {
-      console.error("Lỗi khi lấy lịch sử chat:", err);
-      socket.emit('error', { message: 'Không thể tải lịch sử chat' });
+    console.error("Lỗi khi join phòng:", err);
+    socket.emit('error', { message: 'Không thể join phòng' });
   }
 };
 
 /**
- * Xử lý khi user gửi message (ĐÃ NÂNG CẤP và SỬA LỖI)
+ * Xử lý khi user gửi message (ĐÃ SỬA LỖI VALIDATION)
  */
-export const handleMessageSend = async (socket, data) => { // Thêm "async"
+export const handleMessageSend = async (socket, data) => {
   const user = users.get(socket.id);
-  
   if (!user) { return; }
+  
+  // PHỤC HỒI CODE VALIDATION BỊ THIẾU
   const { text, room } = data;
   if (!text || !text.trim()) { return; }
   const roomName = room || Array.from(user.rooms)[0];
   if (!roomName || !user.rooms.has(roomName)) { return; }
+  // ------------------------------------
 
   const message = {
-    // Xóa: id: `${socket.id}-${Date.now()}`, // MongoDB sẽ tự tạo _id
     username: user.username,
     text: text.trim(),
     room: roomName,
     timestamp: new Date()
   };
-
+  
   try {
-    // 1. Tạo tin nhắn mới
     const newMessage = new Message(message);
-    
-    // 2. Lưu vào MongoDB và lấy kết quả trả về
     const savedMessage = await newMessage.save();
-
-    // 3. Broadcast tin nhắn ĐÃ LƯU (có _id) tới tất cả users
     const io = socket.server;
-    io.to(roomName).emit('message:receive', savedMessage); // <-- SỬA LỖI: Gửi "savedMessage"
-    
+    io.to(roomName).emit('message:receive', savedMessage);
     console.log(`💬 ${user.username} in ${roomName}: ${text} (saved to DB)`);
-
   } catch (err) {
     console.error('Lỗi khi lưu tin nhắn:', err);
     socket.emit('error', { message: 'Không thể gửi tin nhắn' });
@@ -183,98 +198,142 @@ export const handleMessageSend = async (socket, data) => { // Thêm "async"
 /**
  * Xử lý typing indicator (Giữ nguyên)
  */
-export const handleTypingStart = (socket, data) => {
-  const user = users.get(socket.id);
-  if (user) {
-    const roomName = data?.room || Array.from(user.rooms)[0];
-    if (roomName && user.rooms.has(roomName)) {
-      socket.to(roomName).emit('typing:start', {
-        username: user.username,
-        room: roomName
-      });
-    }
-  }
-};
-
-/**
- * Xử lý typing indicator (Giữ nguyên)
- */
-export const handleTypingStop = (socket, data) => {
-  const user = users.get(socket.id);
-  if (user) {
-    const roomName = data?.room || Array.from(user.rooms)[0];
-    if (roomName && user.rooms.has(roomName)) {
-      socket.to(roomName).emit('typing:stop', {
-        username: user.username,
-        room: roomName
-      });
-    }
-  }
-};
-
-/**
- * Xử lý khi user rời một phòng cụ thể (Giữ nguyên)
- */
-export const handleUserLeave = (socket, data) => {
-  // (Code cũ của bạn giữ nguyên)
+export const handleTypingStart = (socket, data) => { 
   const user = users.get(socket.id);
   if (!user) { return; }
-  // ...
+  const { room } = data;
+  if (!room || !room.trim()) { return; }
+  
+  socket.to(room.trim()).emit('typing:start', { username: user.username });
+};
+
+export const handleTypingStop = (socket, data) => { 
+  const user = users.get(socket.id);
+  if (!user) { return; }
+  const { room } = data;
+  if (!room || !room.trim()) { return; }
+  
+  socket.to(room.trim()).emit('typing:stop', { username: user.username });
+};
+
+/**
+ * Xử lý khi user rời một phòng cụ thể (ĐÃ NÂNG CẤP)
+ * - Sẽ XÓA user khỏi danh sách "members" trong MongoDB
+ */
+export const handleUserLeave = async (socket, data) => {
+  const user = users.get(socket.id);
+  if (!user) { return; }
+  const { room } = data;
+  if (!room || !room.trim()) { return; }
+  const roomName = room.trim();
+  if (!user.rooms.has(roomName)) { return; }
+
+  try {
+    // Xóa user khỏi "members" trong MONGODB
+    await Room.updateOne({ name: roomName }, { $pull: { members: user.username } });
+
+    // (Remove room from user in-memory... giữ nguyên)
+    user.rooms.delete(roomName);
+    socket.leave(roomName);
+
+    // (Emit user:left... giữ nguyên)
+    socket.to(roomName).emit('user:left', {
+      username: user.username,
+      message: `${user.username} đã rời phòng`,
+      timestamp: new Date(),
+      room: roomName
+    });
+
+    // Cập nhật danh sách phòng
+    await handleGetUserRooms(socket);
+
+    console.log(`🛑 ${user.username} left room in DB: ${roomName}`);
+
+  } catch (err) {
+    console.error("Lỗi khi rời phòng:", err);
+    socket.emit('error', { message: 'Không thể rời phòng' });
+  }
 };
 
 /**
  * Xử lý khi user disconnect (Giữ nguyên)
  */
 export const handleUserDisconnect = (socket) => {
-  // (Code cũ của bạn giữ nguyên)
-  const user = users.get(socket.id);
-  if (user) { /* ... */ }
-};
-
-/**
- * Xử lý lấy danh sách phòng của user (Giữ nguyên)
- */
-export const handleGetUserRooms = (socket) => {
   const user = users.get(socket.id);
   if (user) {
-    socket.emit('user:rooms', {
-      rooms: Array.from(user.rooms)
+    // (Logic cũ để emit "user:left" cho tất cả các phòng... giữ nguyên)
+    user.rooms.forEach(roomName => {
+      socket.to(roomName).emit('user:left', {
+        username: user.username,
+        message: `${user.username} đã mất kết nối`,
+        timestamp: new Date(),
+        room: roomName
+      });
     });
-  } else {
-    socket.emit('user:rooms', {
-      rooms: []
-    });
+    users.delete(socket.id);
+    console.log(`👋 User disconnected: ${socket.id} (Username: ${user.username})`);
   }
 };
 
 /**
- * Xử lý lấy thông tin phòng cụ thể (Đã nâng cấp)
+ * Xử lý lấy danh sách phòng của user (ĐÃ NÂNG CẤP)
+ * - Sẽ LẤY danh sách phòng từ MongoDB
  */
-export const handleGetRoomInfo = async (socket, data) => { // Thêm "async"
+export const handleGetUserRooms = async (socket) => {
+  const user = users.get(socket.id);
+  if (!user) {
+    socket.emit('user:rooms', { rooms: [] });
+    return;
+  }
+
+  try {
+    // Tìm tất cả phòng có "user.username" trong mảng "members"
+    const userRooms = await Room.find({ members: user.username }).select('name');
+    
+    socket.emit('user:rooms', {
+      rooms: userRooms.map(r => r.name) // Chỉ trả về mảng tên phòng
+    });
+  } catch (err) {
+    console.error("Lỗi khi lấy danh sách phòng:", err);
+    socket.emit('error', { message: 'Không thể tải danh sách phòng' });
+  }
+};
+
+/**
+ * Xử lý lấy thông tin phòng cụ thể (ĐÃ NÂNG CẤP)
+ * - Sẽ LẤY thông tin phòng từ MongoDB
+ */
+export const handleGetRoomInfo = async (socket, data) => {
   const { room } = data;
   const user = users.get(socket.id);
-  
   if (!user) { return; }
   if (!room || !room.trim()) { return; }
   const roomName = room.trim();
-  if (!user.rooms.has(roomName)) { return; }
-  if (!rooms.has(roomName)) { return; }
+  if (!user.rooms.has(roomName)) { return; } // Phải join (in-memory) rồi mới được lấy info
 
   try {
-    const roomData = rooms.get(roomName);
-    
-    // Lấy 50 tin nhắn cuối từ DB
+    // Lấy thông tin phòng từ MONGODB
+    const roomFromDB = await Room.findOne({ name: roomName });
+    if (!roomFromDB) {
+      socket.emit('error', { message: `Phòng "${roomName}" không tồn tại.` });
+      return;
+    }
+
+    // Lấy lịch sử chat (giữ nguyên)
     const messageHistory = await Message.find({ room: roomName })
                                        .sort({ timestamp: -1 })
                                        .limit(50)
                                        .sort({ timestamp: 1 });
     
+    // Lấy danh sách user ONLINE (từ helper)
+    const onlineUsers = getOnlineUsersInRoom(roomName);
+
     socket.emit('room:info', {
-      room: roomName,
-      totalUsers: roomData.users.length,
-      users: roomData.users.map(u => u.username),
-      messages: messageHistory, // <-- DÙNG LỊCH SỬ TỪ DB
-      createdBy: roomData.createdBy
+      room: roomFromDB.name,
+      totalUsers: onlineUsers.length, // Số user đang online
+      users: onlineUsers, // Tên user đang online
+      messages: messageHistory,
+      createdBy: roomFromDB.createdBy // Lấy người tạo từ DB
     });
 
   } catch (err) {
@@ -284,13 +343,56 @@ export const handleGetRoomInfo = async (socket, data) => { // Thêm "async"
 };
 
 /**
- * Xử lý khi user xóa phòng (Giữ nguyên)
+ * Xử lý khi user xóa phòng (ĐÃ NÂNG CẤP)
+ * - Sẽ XÓA phòng và tin nhắn khỏi MongoDB
  */
-export const handleRoomDelete = (socket, data) => {
-  // (Code cũ của bạn giữ nguyên)
+export const handleRoomDelete = async (socket, data) => {
   const { username, room } = data;
-  if (!username || !username.trim()) { /* ... */ return; }
-  // ...
+  const user = users.get(socket.id);
+  if (!user || user.username !== username) { return; }
+  if (!room || !room.trim()) { return; }
+  const roomName = room.trim();
+
+  try {
+    // Kiểm tra trong MONGODB
+    const roomFromDB = await Room.findOne({ name: roomName });
+    if (!roomFromDB) {
+      socket.emit('error', { message: `Phòng "${roomName}" không tồn tại.` });
+      return;
+    }
+
+    // Chỉ "createdBy" mới được xóa
+    if (roomFromDB.createdBy !== user.username) {
+      socket.emit('error', { message: 'Chỉ chủ phòng mới có quyền xóa phòng này.' });
+      return;
+    }
+
+    // Xóa phòng và tin nhắn khỏi MONGODB
+    await Room.deleteOne({ name: roomName });
+    await Message.deleteMany({ room: roomName });
+    
+    // Thông báo cho TẤT CẢ user trong phòng (kể cả người xóa)
+    const io = socket.server;
+    io.in(roomName).emit('room:deleted', {
+      room: roomName,
+      message: `Phòng "${roomName}" đã bị xóa bởi chủ phòng.`,
+      timestamp: new Date()
+    });
+
+    // Buộc tất cả socket rời khỏi phòng (server-side)
+    io.socketsLeave(roomName);
+
+    // Xóa phòng khỏi bộ nhớ "in-memory" của TẤT CẢ user
+    users.forEach(u => {
+      u.rooms.delete(roomName);
+    });
+
+    console.log(`🗑️ Room deleted from DB: ${roomName} by ${username}`);
+
+  } catch (err) {
+    console.error("Lỗi khi xóa phòng:", err);
+    socket.emit('error', { message: 'Không thể xóa phòng' });
+  }
 };
 
 /**
