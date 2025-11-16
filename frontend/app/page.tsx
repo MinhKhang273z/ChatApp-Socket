@@ -947,6 +947,8 @@ export default function Home() {
         onLogout={handleLogout}
         onStartCall={handleStartCall}
         isConnected={isConnected}
+        userRooms={userRooms}
+        onSelectRoom={handleJoinRoom}
       />
       
       <CallModal

@@ -14,9 +14,10 @@ interface MessageListProps {
   messages: Message[]
   currentUsername: string
   typingUsers: string[]
+  isDarkMode?: boolean
 }
 
-export default function MessageList({ messages, currentUsername, typingUsers }: MessageListProps) {
+export default function MessageList({ messages, currentUsername, typingUsers, isDarkMode = false }: MessageListProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
 
@@ -38,8 +39,8 @@ export default function MessageList({ messages, currentUsername, typingUsers }: 
       {messages.length === 0 ? (
         <div className="flex-1 flex items-center justify-center">
           <div className="text-center">
-            <p className="text-gray-400 text-lg">Chưa có tin nhắn nào</p>
-            <p className="text-gray-400 text-sm mt-2">Hãy bắt đầu cuộc trò chuyện!</p>
+            <p className={`${isDarkMode ? 'text-gray-500' : 'text-gray-400'} text-lg`}>Chưa có tin nhắn nào</p>
+            <p className={`${isDarkMode ? 'text-gray-500' : 'text-gray-400'} text-sm mt-2`}>Hãy bắt đầu cuộc trò chuyện!</p>
           </div>
         </div>
       ) : (
@@ -53,6 +54,7 @@ export default function MessageList({ messages, currentUsername, typingUsers }: 
               message={message}
               isOwnMessage={isOwnMessage}
               isSystemMessage={isSystemMessage}
+              isDarkMode={isDarkMode}
             />
           )
         })
@@ -61,7 +63,7 @@ export default function MessageList({ messages, currentUsername, typingUsers }: 
       {/* Typing Indicator - luôn hiển thị khi có người đang gõ */}
       {typingUsers.length > 0 && (
         <div className="flex justify-start animate-fade-in">
-          <div className="bg-gray-200 text-gray-600 px-4 py-2 rounded-lg shadow-sm">
+          <div className={`${isDarkMode ? 'bg-gray-700 text-gray-300' : 'bg-gray-200 text-gray-600'} px-4 py-2 rounded-lg shadow-sm`}>
             <div className="flex items-center space-x-2">
               <span className="text-sm font-medium">
                 {typingUsers.length === 1
@@ -71,9 +73,9 @@ export default function MessageList({ messages, currentUsername, typingUsers }: 
                   : `${typingUsers[0]} và ${typingUsers.length - 1} người khác đang gõ`}
               </span>
               <div className="flex space-x-1">
-                <div className="w-2 h-2 bg-gray-600 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
-                <div className="w-2 h-2 bg-gray-600 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
-                <div className="w-2 h-2 bg-gray-600 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
+                <div className={`w-2 h-2 ${isDarkMode ? 'bg-gray-300' : 'bg-gray-600'} rounded-full animate-bounce`} style={{ animationDelay: '0ms' }}></div>
+                <div className={`w-2 h-2 ${isDarkMode ? 'bg-gray-300' : 'bg-gray-600'} rounded-full animate-bounce`} style={{ animationDelay: '150ms' }}></div>
+                <div className={`w-2 h-2 ${isDarkMode ? 'bg-gray-300' : 'bg-gray-600'} rounded-full animate-bounce`} style={{ animationDelay: '300ms' }}></div>
               </div>
             </div>
           </div>

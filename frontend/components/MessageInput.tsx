@@ -5,12 +5,13 @@ import { useState, useRef, useEffect } from 'react'
 interface MessageInputProps {
   onSendMessage: (text: string) => void
   onTyping: (isTyping: boolean) => void
+  isDarkMode?: boolean
 }
 
 const MAX_MESSAGE_LENGTH = 1000
 const TYPING_TIMEOUT = 2000 // 2 giây
 
-export default function MessageInput({ onSendMessage, onTyping }: MessageInputProps) {
+export default function MessageInput({ onSendMessage, onTyping, isDarkMode = false }: MessageInputProps) {
   const [message, setMessage] = useState('')
   const [isTyping, setIsTyping] = useState(false)
   const [error, setError] = useState('')
@@ -109,7 +110,7 @@ export default function MessageInput({ onSendMessage, onTyping }: MessageInputPr
   const showCharCount = message.length > MAX_MESSAGE_LENGTH * 0.8
 
   return (
-    <div className="border-t border-gray-200 p-4 bg-gray-50">
+    <div className={`border-t ${isDarkMode ? 'border-gray-700 bg-gray-800' : 'border-gray-200 bg-gray-50'} p-4`}>
       <form onSubmit={handleSubmit} className="space-y-2">
         <div className="flex gap-2">
           <input
@@ -119,7 +120,11 @@ export default function MessageInput({ onSendMessage, onTyping }: MessageInputPr
             onChange={handleChange}
             onKeyDown={handleKeyDown}
             placeholder="Nhập tin nhắn... (Enter để gửi)"
-            className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-black placeholder:text-gray-400"
+            className={`flex-1 px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none ${
+              isDarkMode
+                ? 'bg-gray-700 border-gray-600 text-gray-100 placeholder:text-gray-400'
+                : 'bg-white border-gray-300 text-black placeholder:text-gray-400'
+            }`}
             autoComplete="off"
           />
           <button
@@ -137,7 +142,7 @@ export default function MessageInput({ onSendMessage, onTyping }: MessageInputPr
             <p className="text-xs text-red-500">{error}</p>
           )}
           {!error && showCharCount && (
-            <p className={`text-xs ml-auto ${remainingChars < 50 ? 'text-red-500' : 'text-gray-500'}`}>
+            <p className={`text-xs ml-auto ${remainingChars < 50 ? 'text-red-500' : isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
               {remainingChars} ký tự còn lại
             </p>
           )}
