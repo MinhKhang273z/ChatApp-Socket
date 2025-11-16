@@ -21,6 +21,7 @@ import configurePassport from './config/passport.js';
 import { setupSocketListeners, users } from './handlers/socketHandlers.js'; 
 import { errorHandler, notFoundHandler } from './middleware/errorHandler.js';
 import userRoutes from './routes/userRoutes.js';
+import roomRoutes from './routes/roomRoutes.js';
 
 // --- KẾT NỐI MONGODB ---
 const MONGO_URI = process.env.MONGO_URI; 
@@ -89,6 +90,9 @@ app.get('/health', (req, res) => {
 
 // Auth routes
 app.use('/api/auth', userRoutes);
+
+// Room routes
+app.use('/api/rooms', roomRoutes);
 
 /**
  * GET /api/users (Lấy danh sách user đang online)

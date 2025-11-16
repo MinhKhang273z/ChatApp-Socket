@@ -185,7 +185,7 @@ export default function AuthForm({ onAuthSuccess }: AuthFormProps) {
                 type="email"
                 value={loginEmail}
                 onChange={(e) => setLoginEmail(e.target.value)}
-                placeholder="your@email.com"
+                placeholder="your@gmail.com"
                 className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition text-black placeholder:text-gray-400"
                 required
                 autoFocus
@@ -245,7 +245,7 @@ export default function AuthForm({ onAuthSuccess }: AuthFormProps) {
                 type="email"
                 value={registerEmail}
                 onChange={(e) => setRegisterEmail(e.target.value)}
-                placeholder="your@email.com"
+                placeholder="your@gmail.com"
                 className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition text-black placeholder:text-gray-400"
                 required
               />

@@ -30,6 +30,47 @@ GOOGLE_CLIENT_SECRET=your-google-client-secret
 GOOGLE_CALLBACK_URL=http://localhost:3001/api/auth/google/callback
 ```
 
+ Thú ý: dự án này chỉ hỗ trợ **MongoDB** cho lưu trữ dữ liệu. Thêm biến `MONGO_URI` vào file `.env` ví dụ:
+ 
+ ```env
+ MONGO_URI=mongodb://localhost:27017/chatapp
+ # Hoặc nếu dùng MongoDB Atlas:
+ # MONGO_URI=mongodb+srv://<username>:<password>@cluster0.mongodb.net/chatapp?retryWrites=true&w=majority
+ ```
+ 
+Hướng dẫn nhanh sử dụng **MongoDB với Docker** và **MongoDB Compass**:
+
+- Ưu tiên: Dùng Docker để chạy MongoDB (khuyên dùng nếu đã cài Docker Desktop):
+   ```powershell
+   docker run -d --name chatapp-mongo -p 27017:27017 -v chatapp-mongo-data:/data/db mongo:latest
+   ```
+   Lệnh trên sẽ tạo container MongoDB, mở cổng 27017 và lưu dữ liệu vào volume `chatapp-mongo-data`.
+   - Để dừng container:
+      ```powershell
+      docker stop chatapp-mongo
+      ```
+   - Để khởi động lại:
+      ```powershell
+      docker start chatapp-mongo
+      ```
+
+- Cài MongoDB Compass (GUI): tải từ https://www.mongodb.com/try/download/compass để dễ quản lý database.
+- Mở MongoDB Compass và kết nối bằng chuỗi `MONGO_URI` của bạn (ví dụ `mongodb://localhost:27017`). Tạo database `chatapp` nếu cần.
+
+- Nếu không dùng Docker, có thể cài MongoDB Community Server (Windows): tải từ https://www.mongodb.com/try/download/community và làm theo hướng dẫn cài đặt (không khuyến khích nếu đã có Docker).
+# Hoặc nếu dùng MongoDB Atlas:
+# MONGO_URI=mongodb+srv://<username>:<password>@cluster0.mongodb.net/chatapp?retryWrites=true&w=majority
+```
+
+Hướng dẫn ngắn để dùng **MongoDB + MongoDB Compass**:
+
+- Cài MongoDB Community Server (Windows): tải từ https://www.mongodb.com/try/download/community và làm theo hướng dẫn cài đặt.
+- Cài MongoDB Compass (GUI): tải từ https://www.mongodb.com/try/download/compass để dễ quản lý database.
+- Khởi chạy dịch vụ MongoDB (Windows service thường được cài tự động) hoặc chạy `mongod` từ command prompt nếu cài đặt theo cách thủ công.
+- Mở MongoDB Compass và kết nối bằng chuỗi `MONGO_URI` của bạn (ví dụ `mongodb://localhost:27017`). Tạo database `chatapp` nếu cần.
+
+Lưu ý bảo mật: không commit file `.env` chứa mật khẩu/credentials; sử dụng secret manager hoặc biến môi trường trên server production.
+
 ### 2. Cấu hình Google OAuth
 
 #### Bước 1: Tạo Google OAuth Credentials
