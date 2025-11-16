@@ -26,6 +26,7 @@ interface ChatRoomProps {
   onAddRoom: () => void
   onLogout: () => void
   isConnected: boolean
+  onStartCall?: (targetUser: string, callType: 'voice' | 'video') => void
 }
 
 export default function ChatRoom({
@@ -42,6 +43,7 @@ export default function ChatRoom({
   onAddRoom,
   onLogout,
   isConnected,
+  onStartCall,
 }: ChatRoomProps) {
   const isRoomOwner = roomCreatedBy === username
   return (
@@ -118,7 +120,7 @@ export default function ChatRoom({
 
         {/* Users Sidebar */}
         <div className="w-64 bg-white rounded-lg shadow-lg p-4">
-          <UserList users={users} currentUsername={username} />
+          <UserList users={users} currentUsername={username} onStartCall={onStartCall} />
         </div>
       </div>
     </div>

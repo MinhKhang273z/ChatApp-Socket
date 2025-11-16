@@ -410,5 +410,98 @@ export const setupSocketListeners = (socket) => {
   socket.on('message:send', (data) => handleMessageSend(socket, data));
   socket.on('typing:start', (data) => handleTypingStart(socket, data));
   socket.on('typing:stop', (data) => handleTypingStop(socket, data));
+  
+  // WebRTC Call Events
+  socket.on('call:offer', (data) => handleCallOffer(socket, data));
+  socket.on('call:answer', (data) => handleCallAnswer(socket, data));
+  socket.on('call:answer-sdp', (data) => handleCallAnswerSDP(socket, data));
+  socket.on('call:ice-candidate', (data) => handleCallIceCandidate(socket, data));
+  socket.on('call:end', (data) => handleCallEnd(socket, data));
+  
   socket.on('disconnect', () => handleUserDisconnect(socket));
+};
+
+/**
+ * WebRTC Call Handlers
+ */
+export const handleCallOffer = (socket, data) => {
+  const { to, offer, callType, from } = data;
+  
+  // Find target user's socket
+  const targetUser = Array.from(users.values()).find(u => u.username === to);
+  
+  if (targetUser) {
+    socket.to(targetUser.id).emit('call:incoming', {
+      from: from,
+      offer: offer,
+      callType: callType,
+    });
+    console.log(`📞 Call offer from ${from} to ${to} (${callType})`);
+  } else {
+    socket.emit('error', { message: 'Người dùng không online' });
+  }
+};
+
+export const handleCallAnswer = (socket, data) => {
+  const { to, accepted } = data;
+  
+  // Find target user's socket
+  const targetUser = Array.from(users.values()).find(u => u.username === to);
+  
+  if (targetUser) {
+    if (accepted) {
+      socket.to(targetUser.id).emit('call:answer', { accepted: true });
+      console.log(`✅ Call accepted by ${to}`);
+    } else {
+      socket.to(targetUser.id).emit('call:rejected');
+      console.log(`❌ Call rejected by ${to}`);
+    }
+  }
+};
+
+export const handleCallAnswerSDP = (socket, data) => {
+  const { to, answer } = data;
+  
+  // Find target user's socket
+  const targetUser = Array.from(users.values()).find(u => u.username === to);
+  
+  if (targetUser) {
+    socket.to(targetUser.id).emit('call:answer-sdp', {
+      from: users.get(socket.id)?.username || '',
+      answer: answer,
+    });
+    console.log(`📡 SDP answer sent to ${to}`);
+  }
+};
+
+export const handleCallIceCandidate = (socket, data) => {
+  const { to, candidate } = data;
+  const username = users.get(socket.id)?.username || 'unknown';
+  
+  console.log(`🧊 ICE candidate from ${username} to ${to}`);
+  
+  // Find target user's socket
+  const targetUser = Array.from(users.values()).find(u => u.username === to);
+  
+  if (targetUser) {
+    socket.to(targetUser.id).emit('call:ice-candidate', {
+      from: username,
+      candidate: candidate,
+    });
+    console.log(`✅ ICE candidate forwarded to ${to}`);
+  } else {
+    console.log(`❌ Target user not found: ${to}`);
+  }
+};
+
+export const handleCallEnd = (socket, data) => {
+  const { to } = data;
+  
+  // Find target user's socket
+  const targetUser = Array.from(users.values()).find(u => u.username === to);
+  
+  if (targetUser) {
+    socket.to(targetUser.id).emit('call:ended');
+    console.log(`📵 Call ended between users`);
+  }
 };

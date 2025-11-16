@@ -6,6 +6,7 @@ import { io, Socket } from 'socket.io-client'
 import ChatRoom from '@/components/ChatRoom'
 import AuthForm from '@/components/AuthForm'
 import RoomSelector from '@/components/RoomSelector'
+import CallModal from '@/components/CallModal'
 
 interface Message {
   id: string
@@ -34,6 +35,18 @@ export default function Home() {
   const [users, setUsers] = useState<string[]>([])
   const [typingUsers, setTypingUsers] = useState<Set<string>>(new Set())
   const currentRoomRef = useRef<string>('')
+
+  // WebRTC State
+  const [isCallModalOpen, setIsCallModalOpen] = useState(false)
+  const [callType, setCallType] = useState<'voice' | 'video'>('voice')
+  const [isIncomingCall, setIsIncomingCall] = useState(false)
+  const [callerName, setCallerName] = useState<string>('')
+  const [callStatus, setCallStatus] = useState<'calling' | 'connected' | 'ended'>('calling')
+  const [localStream, setLocalStream] = useState<MediaStream | null>(null)
+  const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null)
+  const peerConnectionRef = useRef<RTCPeerConnection | null>(null)
+  const [targetCallUser, setTargetCallUser] = useState<string>('')
+  const [incomingOffer, setIncomingOffer] = useState<RTCSessionDescriptionInit | null>(null)
 
   // Update ref when currentRoom changes
   useEffect(() => {
@@ -142,7 +155,16 @@ export default function Home() {
     if (!isAuthenticated) return
 
     // Initialize socket connection
-    const socketUrl = process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:3001'
+    // Tự động detect backend URL dựa vào hostname hiện tại
+    const getSocketUrl = () => {
+      if (typeof window === 'undefined') return 'http://localhost:3001'
+      const hostname = window.location.hostname
+      // Nếu truy cập qua Radmin VPN IP
+      if (hostname.startsWith('26.')) return `http://${hostname}:3001`
+      // Mặc định localhost
+      return 'http://localhost:3001'
+    }
+    const socketUrl = getSocketUrl()
     const newSocket = io(socketUrl, {
       transports: ['websocket', 'polling'],
       reconnection: true,
@@ -435,6 +457,108 @@ export default function Home() {
       }
     })
 
+    // WebRTC Socket Events
+    newSocket.on('call:incoming', async (data: { from: string; offer: RTCSessionDescriptionInit; callType: 'voice' | 'video' }) => {
+      console.log('📞 Incoming call from:', data.from, 'Type:', data.callType)
+      setTargetCallUser(data.from)
+      setCallerName(data.from)
+      setCallType(data.callType)
+      setIsIncomingCall(true)
+      setIsCallModalOpen(true)
+      setCallStatus('calling')
+      setIncomingOffer(data.offer)
+      
+      // Create peer connection immediately to receive ICE candidates
+      const pc = new RTCPeerConnection({
+        iceServers: [
+          { urls: 'stun:stun.l.google.com:19302' },
+          { urls: 'stun:stun1.l.google.com:19302' },
+        ]
+      })
+      
+      pc.onicecandidate = (event) => {
+        if (event.candidate && newSocket) {
+          console.log('🧊 Sending ICE candidate to:', data.from)
+          newSocket.emit('call:ice-candidate', {
+            to: data.from,
+            candidate: event.candidate,
+          })
+        }
+      }
+      
+      pc.ontrack = (event) => {
+        console.log('📺 Received remote track:', event.track.kind)
+        setRemoteStream(event.streams[0])
+      }
+      
+      pc.oniceconnectionstatechange = () => {
+        console.log('🔌 ICE connection state:', pc.iceConnectionState)
+      }
+      
+      pc.onconnectionstatechange = () => {
+        console.log('🔗 Connection state:', pc.connectionState)
+        if (pc.connectionState === 'connected') {
+          setCallStatus('connected')
+        } else if (pc.connectionState === 'failed' || pc.connectionState === 'disconnected') {
+          // Handle disconnect
+        }
+      }
+      
+      // Set remote description immediately
+      try {
+        await pc.setRemoteDescription(new RTCSessionDescription(data.offer))
+        console.log('✅ Remote description set for incoming call')
+      } catch (error) {
+        console.error('❌ Error setting remote description:', error)
+      }
+      
+      peerConnectionRef.current = pc
+    })
+
+    newSocket.on('call:answer-sdp', async (data: { from: string; answer: RTCSessionDescriptionInit }) => {
+      console.log('📡 Received SDP answer from:', data.from)
+      try {
+        if (peerConnectionRef.current) {
+          await peerConnectionRef.current.setRemoteDescription(new RTCSessionDescription(data.answer))
+          console.log('✅ Remote description set successfully')
+        } else {
+          console.error('❌ No peer connection when receiving answer')
+        }
+      } catch (error) {
+        console.error('Error setting remote description:', error)
+      }
+    })
+
+    newSocket.on('call:ice-candidate', async (data: { from: string; candidate: RTCIceCandidateInit }) => {
+      console.log('🧊 Received ICE candidate from:', data.from)
+      try {
+        if (peerConnectionRef.current) {
+          await peerConnectionRef.current.addIceCandidate(new RTCIceCandidate(data.candidate))
+          console.log('✅ ICE candidate added')
+        } else {
+          console.error('❌ No peer connection when receiving ICE candidate')
+        }
+      } catch (error) {
+        console.error('Error adding ICE candidate:', error)
+      }
+    })
+
+    newSocket.on('call:answer', (data: { accepted: boolean }) => {
+      console.log('📞 Call answered:', data.accepted)
+      if (data.accepted) {
+        setCallStatus('connected')
+      }
+    })
+
+    newSocket.on('call:rejected', () => {
+      alert('Cuộc gọi bị từ chối')
+      handleEndCall()
+    })
+
+    newSocket.on('call:ended', () => {
+      handleEndCall()
+    })
+
     setSocket(newSocket)
 
     return () => {
@@ -571,6 +695,204 @@ export default function Home() {
     }
   }, [socket, currentRoom])
 
+  // WebRTC Functions
+  const handleEndCall = useCallback(() => {
+    if (socket && targetCallUser) {
+      socket.emit('call:end', {
+        to: targetCallUser,
+      })
+    }
+    
+    if (localStream) {
+      localStream.getTracks().forEach(track => track.stop())
+      setLocalStream(null)
+    }
+    
+    if (remoteStream) {
+      remoteStream.getTracks().forEach(track => track.stop())
+      setRemoteStream(null)
+    }
+    
+    if (peerConnectionRef.current) {
+      peerConnectionRef.current.close()
+      peerConnectionRef.current = null
+    }
+    
+    setIsCallModalOpen(false)
+    setCallStatus('ended')
+    setTargetCallUser('')
+  }, [socket, targetCallUser, localStream, remoteStream])
+
+  const createPeerConnection = useCallback((targetUser: string) => {
+    const configuration = {
+      iceServers: [
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun1.l.google.com:19302' },
+      ]
+    }
+    
+    const pc = new RTCPeerConnection(configuration)
+    
+    pc.onicecandidate = (event) => {
+      if (event.candidate && socket) {
+        console.log('🧊 Sending ICE candidate to:', targetUser)
+        socket.emit('call:ice-candidate', {
+          to: targetUser,
+          candidate: event.candidate,
+        })
+      } else if (!event.candidate) {
+        console.log('✅ ICE gathering complete')
+      }
+    }
+    
+    pc.ontrack = (event) => {
+      console.log('📺 Received remote track:', event.track.kind)
+      setRemoteStream(event.streams[0])
+    }
+    
+    pc.oniceconnectionstatechange = () => {
+      console.log('🔌 ICE connection state:', pc.iceConnectionState)
+    }
+    
+    pc.onconnectionstatechange = () => {
+      console.log('🔗 Connection state:', pc.connectionState)
+      if (pc.connectionState === 'connected') {
+        setCallStatus('connected')
+      } else if (pc.connectionState === 'failed' || pc.connectionState === 'disconnected') {
+        handleEndCall()
+      }
+    }
+    
+    return pc
+  }, [socket])
+
+  const handleStartCall = useCallback(async (targetUser: string, type: 'voice' | 'video') => {
+    console.log('📞 Starting call to:', targetUser, 'Type:', type)
+    try {
+      setTargetCallUser(targetUser)
+      setCallType(type)
+      setIsIncomingCall(false)
+      setIsCallModalOpen(true)
+      setCallStatus('calling')
+
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: true,
+        video: type === 'video'
+      })
+      console.log('✅ Got local stream')
+
+      setLocalStream(stream)
+
+      const pc = createPeerConnection(targetUser)
+      peerConnectionRef.current = pc
+
+      stream.getTracks().forEach(track => {
+        pc.addTrack(track, stream)
+      })
+
+      const offer = await pc.createOffer()
+      await pc.setLocalDescription(offer)
+      console.log('📤 Sending offer to:', targetUser)
+
+      if (socket) {
+        socket.emit('call:offer', {
+          to: targetUser,
+          offer: offer,
+          callType: type,
+          from: username,
+        })
+      }
+    } catch (error) {
+      console.error('Error starting call:', error)
+      alert('Không thể truy cập camera/microphone')
+      handleEndCall()
+    }
+  }, [socket, username, createPeerConnection])
+
+  const handleAcceptCall = useCallback(async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: true,
+        video: callType === 'video'
+      })
+      
+      setLocalStream(stream)
+      setCallStatus('connected')
+      
+      // Use existing peer connection (already created in call:incoming)
+      const pc = peerConnectionRef.current
+      if (!pc) {
+        console.error('❌ No peer connection found when accepting call')
+        return
+      }
+      
+      // Add local tracks to existing peer connection
+      stream.getTracks().forEach(track => {
+        console.log('➕ Adding local track:', track.kind)
+        pc.addTrack(track, stream)
+      })
+      
+      // Create and send answer (remote description already set in call:incoming)
+      const answer = await pc.createAnswer()
+      await pc.setLocalDescription(answer)
+      console.log('📤 Sending answer to:', targetCallUser)
+      
+      if (socket) {
+        socket.emit('call:answer-sdp', {
+          to: targetCallUser,
+          answer: answer,
+        })
+        
+        socket.emit('call:answer', {
+          to: targetCallUser,
+          accepted: true,
+        })
+      }
+      
+      setIncomingOffer(null)
+    } catch (error) {
+      console.error('Error accepting call:', error)
+      alert('Không thể truy cập camera/microphone')
+      // Don't call handleRejectCall here to avoid circular dependency
+      if (socket && targetCallUser) {
+        socket.emit('call:answer', {
+          to: targetCallUser,
+          accepted: false,
+        })
+      }
+      setIsCallModalOpen(false)
+      setCallStatus('ended')
+    }
+  }, [socket, targetCallUser, callType, incomingOffer])
+
+  const handleRejectCall = useCallback(() => {
+    if (socket && targetCallUser) {
+      socket.emit('call:answer', {
+        to: targetCallUser,
+        accepted: false,
+      })
+    }
+    
+    if (localStream) {
+      localStream.getTracks().forEach(track => track.stop())
+      setLocalStream(null)
+    }
+    
+    if (remoteStream) {
+      remoteStream.getTracks().forEach(track => track.stop())
+      setRemoteStream(null)
+    }
+    
+    if (peerConnectionRef.current) {
+      peerConnectionRef.current.close()
+      peerConnectionRef.current = null
+    }
+    
+    setIsCallModalOpen(false)
+    setCallStatus('ended')
+    setTargetCallUser('')
+  }, [socket, targetCallUser, localStream, remoteStream])
+
   // Chuyển đổi Set thành Array với useMemo
   const typingUsersArray = useMemo(() => {
     const arr: string[] = []
@@ -609,21 +931,37 @@ export default function Home() {
 
   // Show chat room
   return (
-    <ChatRoom
-      username={username}
-      room={currentRoom}
-      messages={messages}
-      users={users}
-      typingUsers={typingUsersArray}
-      roomCreatedBy={roomCreatedBy}
-      onSendMessage={handleSendMessage}
-      onTyping={handleTyping}
-      onLeaveRoom={handleLeaveRoom}
-      onDeleteRoom={handleDeleteRoom}
-      onAddRoom={handleAddRoom}
-      onLogout={handleLogout}
-      isConnected={isConnected}
-    />
+    <>
+      <ChatRoom
+        username={username}
+        room={currentRoom}
+        messages={messages}
+        users={users}
+        typingUsers={typingUsersArray}
+        roomCreatedBy={roomCreatedBy}
+        onSendMessage={handleSendMessage}
+        onTyping={handleTyping}
+        onLeaveRoom={handleLeaveRoom}
+        onDeleteRoom={handleDeleteRoom}
+        onAddRoom={handleAddRoom}
+        onLogout={handleLogout}
+        onStartCall={handleStartCall}
+        isConnected={isConnected}
+      />
+      
+      <CallModal
+        isOpen={isCallModalOpen}
+        callType={callType}
+        isIncoming={isIncomingCall}
+        callerName={callerName}
+        onAccept={handleAcceptCall}
+        onReject={handleRejectCall}
+        onEndCall={handleEndCall}
+        localStream={localStream}
+        remoteStream={remoteStream}
+        callStatus={callStatus}
+      />
+    </>
   )
 }
 

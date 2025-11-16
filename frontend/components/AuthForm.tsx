@@ -21,7 +21,16 @@ export default function AuthForm({ onAuthSuccess }: AuthFormProps) {
   const [registerPassword, setRegisterPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
 
-  const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'
+  // Tự động detect backend URL dựa vào hostname hiện tại
+  const getBackendUrl = () => {
+    if (typeof window === 'undefined') return 'http://localhost:3001'
+    const hostname = window.location.hostname
+    // Nếu truy cập qua Radmin VPN IP
+    if (hostname.startsWith('26.')) return `http://${hostname}:3001`
+    // Mặc định localhost
+    return 'http://localhost:3001'
+  }
+  const API_URL = getBackendUrl()
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
