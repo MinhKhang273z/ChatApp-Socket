@@ -26,7 +26,7 @@ const storage = multer.diskStorage({
   }
 });
 
-// File filter - chỉ cho phép hình ảnh và một số file phổ biến
+// File filter - chỉ cho phép hình ảnh, audio và một số file phổ biến
 const fileFilter = (req, file, cb) => {
   const allowedMimes = [
     'image/jpeg',
@@ -37,13 +37,20 @@ const fileFilter = (req, file, cb) => {
     'application/pdf',
     'application/msword',
     'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-    'text/plain'
+    'text/plain',
+    // Audio files
+    'audio/mpeg',
+    'audio/mp3',
+    'audio/wav',
+    'audio/ogg',
+    'audio/webm',
+    'audio/mp4'
   ];
 
   if (allowedMimes.includes(file.mimetype)) {
     cb(null, true);
   } else {
-    cb(new Error('Loại file không được hỗ trợ. Chỉ chấp nhận hình ảnh, PDF, Word, và text files.'), false);
+    cb(new Error('Loại file không được hỗ trợ. Chỉ chấp nhận hình ảnh, audio, PDF, Word, và text files.'), false);
   }
 };
 

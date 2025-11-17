@@ -1,5 +1,155 @@
 'use client'
 
+import { useState, useRef, useEffect } from 'react'
+
+// Voice Message Component
+interface VoiceMessageProps {
+  audioUrl: string
+  isOwnMessage: boolean
+  isDarkMode: boolean
+}
+
+function VoiceMessage({ audioUrl, isOwnMessage, isDarkMode }: VoiceMessageProps) {
+  const [isPlaying, setIsPlaying] = useState(false)
+  const [duration, setDuration] = useState(0)
+  const [currentTime, setCurrentTime] = useState(0)
+  const audioRef = useRef<HTMLAudioElement>(null)
+
+  useEffect(() => {
+    const audio = audioRef.current
+    if (!audio) return
+
+    const handleLoadedMetadata = () => {
+      setDuration(audio.duration)
+    }
+
+    const handleTimeUpdate = () => {
+      setCurrentTime(audio.currentTime)
+    }
+
+    const handleEnded = () => {
+      setIsPlaying(false)
+      setCurrentTime(0)
+    }
+
+    audio.addEventListener('loadedmetadata', handleLoadedMetadata)
+    audio.addEventListener('timeupdate', handleTimeUpdate)
+    audio.addEventListener('ended', handleEnded)
+
+    return () => {
+      audio.removeEventListener('loadedmetadata', handleLoadedMetadata)
+      audio.removeEventListener('timeupdate', handleTimeUpdate)
+      audio.removeEventListener('ended', handleEnded)
+    }
+  }, [])
+
+  const togglePlay = () => {
+    const audio = audioRef.current
+    if (!audio) return
+
+    if (isPlaying) {
+      audio.pause()
+    } else {
+      audio.play()
+    }
+    setIsPlaying(!isPlaying)
+  }
+
+  const formatTime = (time: number) => {
+    if (isNaN(time)) return '0:00'
+    const minutes = Math.floor(time / 60)
+    const seconds = Math.floor(time % 60)
+    return `${minutes}:${seconds.toString().padStart(2, '0')}`
+  }
+
+  const progress = duration > 0 ? (currentTime / duration) * 100 : 0
+
+  return (
+    <div className={`flex items-center gap-3 p-3 rounded-lg min-w-[200px] ${
+      isOwnMessage
+        ? 'bg-blue-700'
+        : isDarkMode
+        ? 'bg-gray-600'
+        : 'bg-gray-300'
+    }`}>
+      <audio ref={audioRef} src={audioUrl} preload="metadata" />
+      
+      {/* Play/Pause Button */}
+      <button
+        onClick={togglePlay}
+        className={`flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center transition-all ${
+          isOwnMessage
+            ? 'bg-blue-800 hover:bg-blue-900 text-white'
+            : isDarkMode
+            ? 'bg-gray-700 hover:bg-gray-800 text-white'
+            : 'bg-gray-400 hover:bg-gray-500 text-white'
+        }`}
+      >
+        {isPlaying ? (
+          <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+            <path d="M6 4h4v16H6V4zm8 0h4v16h-4V4z"/>
+          </svg>
+        ) : (
+          <svg className="w-5 h-5 ml-0.5" fill="currentColor" viewBox="0 0 24 24">
+            <path d="M8 5v14l11-7z"/>
+          </svg>
+        )}
+      </button>
+
+      {/* Waveform và Progress */}
+      <div className="flex-1 flex flex-col gap-1">
+        {/* Waveform visual */}
+        <div className="flex items-center gap-1 h-6">
+          {[...Array(20)].map((_, i) => (
+            <div
+              key={i}
+              className={`w-1 rounded-full transition-all ${
+                i < (progress / 5) 
+                  ? isOwnMessage
+                    ? 'bg-blue-200'
+                    : isDarkMode
+                    ? 'bg-gray-300'
+                    : 'bg-gray-600'
+                  : isOwnMessage
+                  ? 'bg-blue-800'
+                  : isDarkMode
+                  ? 'bg-gray-700'
+                  : 'bg-gray-400'
+              }`}
+              style={{ 
+                height: `${Math.random() * 16 + 8}px`,
+                opacity: i < (progress / 5) ? 1 : 0.5
+              }}
+            />
+          ))}
+        </div>
+
+        {/* Time */}
+        <div className={`text-xs ${
+          isOwnMessage
+            ? 'text-blue-100'
+            : isDarkMode
+            ? 'text-gray-300'
+            : 'text-gray-600'
+        }`}>
+          {formatTime(currentTime)} / {formatTime(duration)}
+        </div>
+      </div>
+
+      {/* Voice icon */}
+      <div className={`text-lg ${
+        isOwnMessage
+          ? 'text-blue-200'
+          : isDarkMode
+          ? 'text-gray-300'
+          : 'text-gray-600'
+      }`}>
+        🎤
+      </div>
+    </div>
+  )
+}
+
 interface FileInfo {
   filename: string
   originalName: string
@@ -41,9 +191,14 @@ export default function ChatMessage({ message, isOwnMessage, isSystemMessage, on
 
   const getFileIcon = (mimetype: string) => {
     if (mimetype.startsWith('image/')) return '🖼️'
+    if (mimetype.startsWith('audio/')) return '🎤'
     if (mimetype === 'application/pdf') return '📄'
     if (mimetype.includes('word')) return '📝'
     return '📎'
+  }
+
+  const isAudio = (mimetype: string) => {
+    return mimetype.startsWith('audio/')
   }
 
   const canRecall = () => {
@@ -142,6 +297,12 @@ export default function ChatMessage({ message, isOwnMessage, isSystemMessage, on
                     style={{ maxHeight: '300px' }}
                   />
                 </a>
+              ) : isAudio(message.file.mimetype) ? (
+                <VoiceMessage 
+                  audioUrl={`http://localhost:3001${message.file.url}`}
+                  isOwnMessage={isOwnMessage}
+                  isDarkMode={isDarkMode}
+                />
               ) : (
                 <a
                   href={`http://localhost:3001${message.file.url}`}
