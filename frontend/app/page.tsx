@@ -22,6 +22,9 @@ interface Message {
   text: string
   timestamp: Date
   file?: FileInfo
+  isRecalled?: boolean
+  recalledAt?: Date
+  recalledBy?: string
 }
 
 interface User {
@@ -335,7 +338,13 @@ export default function Home() {
     newSocket.on('message:receive', (message: Message & { room?: string }) => {
       // Only show messages for current room
       if (!message.room || message.room === currentRoomRef.current) {
-        setMessages((prev) => [...prev, message])
+        const processedMessage = {
+          ...message,
+          id: message.id || (message as any)._id, // Đảm bảo có id
+          timestamp: new Date(message.timestamp)
+        }
+        console.log('Received new message:', processedMessage)
+        setMessages((prev) => [...prev, processedMessage])
       }
     })
 
@@ -383,10 +392,13 @@ export default function Home() {
           setRoomCreatedBy(data.createdBy)
         }
         if (data.messages && data.messages.length > 0) {
-          setMessages(data.messages.map((msg) => ({
+          const processedMessages = data.messages.map((msg) => ({
             ...msg,
+            id: msg.id || (msg as any)._id, // Đảm bảo có id
             timestamp: new Date(msg.timestamp),
-          })))
+          }))
+          console.log('Loaded messages:', processedMessages)
+          setMessages(processedMessages)
         } else {
           setMessages([])
         }
@@ -464,6 +476,21 @@ export default function Home() {
           return newSet
         })
       }
+    })
+
+    newSocket.on('message:recalled', (data: { messageId: string; recalledBy: string; recalledAt: Date }) => {
+      console.log('🔄 Message recalled event received:', data)
+      setMessages((prev) => {
+        const updated = prev.map(msg => {
+          const msgId = msg.id || (msg as any)._id
+          console.log('Checking message:', msgId, 'vs', data.messageId)
+          return (msgId === data.messageId || (msg as any)._id === data.messageId)
+            ? { ...msg, isRecalled: true, recalledAt: new Date(data.recalledAt), recalledBy: data.recalledBy }
+            : msg
+        })
+        console.log('Updated messages:', updated)
+        return updated
+      })
     })
 
     // WebRTC Socket Events
@@ -740,6 +767,12 @@ export default function Home() {
     }
   }, [socket, currentRoom])
 
+  const handleRecallMessage = useCallback((messageId: string) => {
+    if (!socket || !currentRoom) return
+    console.log('🔄 Sending recall request for message:', messageId, 'in room:', currentRoom)
+    socket.emit('message:recall', { messageId, room: currentRoom })
+  }, [socket, currentRoom])
+
   // WebRTC Functions
   const handleEndCall = useCallback(() => {
     if (socket && targetCallUser) {
@@ -986,6 +1019,7 @@ export default function Home() {
         roomCreatedBy={roomCreatedBy}
         onSendMessage={handleSendMessage}
         onTyping={handleTyping}
+        onRecallMessage={handleRecallMessage}
         onLeaveRoom={handleLeaveRoom}
         onDeleteRoom={handleDeleteRoom}
         onAddRoom={handleAddRoom}

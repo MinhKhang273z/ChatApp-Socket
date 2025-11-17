@@ -3,21 +3,34 @@
 import { useEffect, useRef } from 'react'
 import ChatMessage from './ChatMessage'
 
+interface FileInfo {
+  filename: string
+  originalName: string
+  mimetype: string
+  size: number
+  url: string
+}
+
 interface Message {
   id: string
   username: string
   text: string
   timestamp: Date
+  file?: FileInfo
+  isRecalled?: boolean
+  recalledAt?: Date
+  recalledBy?: string
 }
 
 interface MessageListProps {
   messages: Message[]
   currentUsername: string
   typingUsers: string[]
+  onRecallMessage: (messageId: string) => void
   isDarkMode?: boolean
 }
 
-export default function MessageList({ messages, currentUsername, typingUsers, isDarkMode = false }: MessageListProps) {
+export default function MessageList({ messages, currentUsername, typingUsers, onRecallMessage, isDarkMode = false }: MessageListProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
 
@@ -54,6 +67,7 @@ export default function MessageList({ messages, currentUsername, typingUsers, is
               message={message}
               isOwnMessage={isOwnMessage}
               isSystemMessage={isSystemMessage}
+              onRecallMessage={onRecallMessage}
               isDarkMode={isDarkMode}
             />
           )

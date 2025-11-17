@@ -13,7 +13,11 @@ const messageSchema = new mongoose.Schema({
     mimetype: { type: String },
     size: { type: Number },
     url: { type: String }
-  }
+  },
+  // Trạng thái tin nhắn
+  isRecalled: { type: Boolean, default: false },
+  recalledAt: { type: Date },
+  recalledBy: { type: String }
 });
 
 export const Message = mongoose.model('Message', messageSchema);

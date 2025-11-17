@@ -21,6 +21,7 @@ interface ChatRoomProps {
   roomCreatedBy?: string
   onSendMessage: (text: string, file?: File) => void
   onTyping: (isTyping: boolean) => void
+  onRecallMessage: (messageId: string) => void
   onLeaveRoom: () => void
   onDeleteRoom?: () => void
   onAddRoom: () => void
@@ -40,6 +41,7 @@ export default function ChatRoom({
   roomCreatedBy,
   onSendMessage,
   onTyping,
+  onRecallMessage,
   onLeaveRoom,
   onDeleteRoom,
   onAddRoom,
@@ -230,6 +232,7 @@ export default function ChatRoom({
             messages={filteredMessages}
             currentUsername={username}
             typingUsers={typingUsers.filter(u => u !== username)}
+            onRecallMessage={onRecallMessage}
             isDarkMode={isDarkMode}
           />
           <MessageInput

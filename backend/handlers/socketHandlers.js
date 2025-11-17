@@ -402,7 +402,86 @@ export const handleRoomDelete = async (socket, data) => {
 };
 
 /**
- * Setup tất cả socket event listeners (Giữ nguyên)
+ * Xử lý thu hồi tin nhắn
+ */
+export const handleMessageRecall = async (socket, data) => {
+  const user = users.get(socket.id);
+  if (!user) { return; }
+  
+  const { messageId, room } = data;
+  if (!messageId || !room) { return; }
+  
+  try {
+    // Tìm tin nhắn
+    const message = await Message.findById(messageId);
+    if (!message) {
+      socket.emit('error', { message: 'Tin nhắn không tồn tại' });
+      return;
+    }
+    
+    // Kiểm tra quyền thu hồi (chỉ người gửi mới được thu hồi)
+    if (message.username !== user.username) {
+      socket.emit('error', { message: 'Bạn chỉ có thể thu hồi tin nhắn của mình' });
+      return;
+    }
+    
+    // Bỏ giới hạn thời gian - cho phép thu hồi bất cứ lúc nào
+    
+    // Kiểm tra đã thu hồi chưa
+    if (message.isRecalled) {
+      socket.emit('error', { message: 'Tin nhắn đã được thu hồi' });
+      return;
+    }
+    
+    // Xóa file nếu có
+    if (message.file && message.file.filename) {
+      try {
+        const fs = await import('fs');
+        const path = await import('path');
+        const { fileURLToPath } = await import('url');
+        
+        const __filename = fileURLToPath(import.meta.url);
+        const __dirname = path.dirname(__filename);
+        const filePath = path.join(__dirname, '../uploads', message.file.filename);
+        
+        if (fs.existsSync(filePath)) {
+          fs.unlinkSync(filePath);
+          console.log(`🗑️ Deleted file: ${message.file.filename}`);
+        }
+      } catch (err) {
+        console.error('Error deleting file:', err);
+      }
+    }
+    
+    // Cập nhật tin nhắn thành đã thu hồi
+    message.isRecalled = true;
+    message.recalledAt = new Date();
+    message.recalledBy = user.username;
+    await message.save();
+    
+    // Broadcast cho tất cả user trong phòng
+    const io = socket.server;
+    io.to(room).emit('message:recalled', {
+      messageId: messageId,
+      recalledBy: user.username,
+      recalledAt: message.recalledAt
+    });
+    
+    console.log(`🔄 Message recalled: ${messageId} by ${user.username}`);
+    console.log('Broadcasting to room:', room, 'with data:', {
+      messageId: messageId,
+      recalledBy: user.username,
+      recalledAt: message.recalledAt
+    });
+    
+  } catch (err) {
+    console.error('Lỗi khi thu hồi tin nhắn:', err);
+    socket.emit('error', { message: 'Không thể thu hồi tin nhắn' });
+  }
+};
+
+/**
+ * Setup tất cả socket event listeners (Đã thêm recall)
  */
 export const setupSocketListeners = (socket) => {
   console.log(`🔗 User connected: ${socket.id}`);
@@ -414,6 +493,7 @@ export const setupSocketListeners = (socket) => {
   socket.on('user:getRooms', () => handleGetUserRooms(socket));
   socket.on('user:getRoomInfo', (data) => handleGetRoomInfo(socket, data));
   socket.on('message:send', (data) => handleMessageSend(socket, data));
+  socket.on('message:recall', (data) => handleMessageRecall(socket, data));
   socket.on('typing:start', (data) => handleTypingStart(socket, data));
   socket.on('typing:stop', (data) => handleTypingStop(socket, data));
   
