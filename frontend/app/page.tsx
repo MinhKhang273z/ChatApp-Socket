@@ -8,11 +8,20 @@ import AuthForm from '@/components/AuthForm'
 import RoomSelector from '@/components/RoomSelector'
 import CallModal from '@/components/CallModal'
 
+interface FileInfo {
+  filename: string
+  originalName: string
+  mimetype: string
+  size: number
+  url: string
+}
+
 interface Message {
   id: string
   username: string
   text: string
   timestamp: Date
+  file?: FileInfo
 }
 
 interface User {
@@ -681,10 +690,46 @@ export default function Home() {
     // Keep messages and users for when they come back
   }, [username])
 
-  const handleSendMessage = useCallback((text: string) => {
-    if (!socket || !text.trim() || !currentRoom) return
-    socket.emit('message:send', { text, room: currentRoom })
-  }, [socket, currentRoom])
+  const handleSendMessage = useCallback(async (text: string, file?: File) => {
+    if (!socket || (!text.trim() && !file) || !currentRoom) return
+    
+    // Nếu có file, upload qua HTTP API
+    if (file) {
+      try {
+        const formData = new FormData()
+        formData.append('file', file)
+        formData.append('username', username)
+        formData.append('room', currentRoom)
+        if (text.trim()) {
+          formData.append('text', text.trim())
+        }
+
+        const response = await fetch('http://localhost:3001/api/messages/upload', {
+          method: 'POST',
+          body: formData,
+        })
+
+        if (!response.ok) {
+          throw new Error('Upload failed')
+        }
+
+        const data = await response.json()
+        
+        // Emit qua socket để broadcast cho mọi người
+        socket.emit('message:send', {
+          text: data.message.text,
+          room: currentRoom,
+          file: data.message.file
+        })
+      } catch (error) {
+        console.error('Error uploading file:', error)
+        alert('Không thể gửi file')
+      }
+    } else {
+      // Chỉ có text, gửi bình thường
+      socket.emit('message:send', { text, room: currentRoom })
+    }
+  }, [socket, currentRoom, username])
 
   const handleTyping = useCallback((isTyping: boolean) => {
     if (!socket || !currentRoom) return
