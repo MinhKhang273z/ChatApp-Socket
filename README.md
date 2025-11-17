@@ -7,305 +7,257 @@
 ![TypeScript](https://img.shields.io/badge/TypeScript-007ACC?style=for-the-badge&logo=typescript)
 ![Socket.io](https://img.shields.io/badge/Socket.io-010101?style=for-the-badge&logo=socket.io)
 ![Node.js](https://img.shields.io/badge/Node.js-339933?style=for-the-badge&logo=node.js)
+![MongoDB](https://img.shields.io/badge/MongoDB-4EA94B?style=for-the-badge&logo=mongodb)
 
-**Ứng dụng chat real-time hiện đại với giao tiếp tức thời**
+**Ứng dụng chat real-time full-stack với bảo mật hiện đại, chia sẻ đa phương tiện và cuộc gọi WebRTC.**
 
-[Giới thiệu](#-giới-thiệu) • [Tính năng](#-tính-năng) • [Cài đặt](#-cài-đặt) • [Sử dụng](#-sử-dụng) • [Công nghệ](#-công-nghệ)
+[Tổng quan](#-tổng-quan) • [Tính năng](#-tính-năng-nổi-bật) • [Kiến trúc](#-kiến-trúc--công-nghệ) • [Bắt đầu nhanh](#-bắt-đầu-nhanh) • [API](#-api-rest) • [Socket Events](#-socketio-events) • [Kiểm thử](#-kiểm-thử--qa)
 
 </div>
 
 ---
 
-## 📖 Giới thiệu
+## 📖 Tổng quan
 
-**ChatApp-Socket** là ứng dụng chat real-time được xây dựng với kiến trúc full-stack hiện đại. Ứng dụng cho phép người dùng giao tiếp tức thời qua WebSocket, hỗ trợ nhiều phòng chat đồng thời với giao diện đẹp mắt và trải nghiệm người dùng mượt mà.
+**ChatApp-Socket** kết hợp Next.js 14 (App Router) & Tailwind ở frontend với Node.js + Express + Socket.io + MongoDB ở backend. Toàn bộ luồng giao tiếp (auth → join phòng → nhắn tin → chia sẻ file/voice → gọi WebRTC) đã được hiện thực hóa trong codebase.
 
-### ✨ Điểm nổi bật
-
-- ⚡ **Real-time messaging** - Giao tiếp tức thời không độ trễ
-- 🎨 **Giao diện hiện đại** - UI/UX được thiết kế cẩn thận với Tailwind CSS
-- 🔄 **Tự động kết nối lại** - Xử lý mất kết nối thông minh
-- 📱 **Responsive** - Hoạt động tốt trên mọi thiết bị
-- 🚀 **Hiệu suất cao** - Tối ưu hóa cho trải nghiệm mượt mà
-
----
-
-## 🚀 Tính năng
-
-| Tính năng | Mô tả |
-|-----------|-------|
-| 💬 **Tin nhắn real-time** | Gửi và nhận tin nhắn tức thời sử dụng Socket.io WebSocket |
-| 🏠 **Nhiều phòng chat** | Tạo và tham gia các phòng chat khác nhau |
-| 👥 **Hiển thị người dùng** | Xem danh sách người dùng đang online trong phòng |
-| ⌨️ **Chỉ báo đang gõ** | Biết khi ai đó đang soạn tin nhắn |
-| 🔔 **Thông báo** | Thông báo khi người dùng tham gia/rời phòng |
-| 🎯 **Tự động kết nối lại** | Tự động kết nối lại khi mất kết nối mạng |
+### ✨ Điểm nhấn
+- ⚡ Real-time latency thấp với Socket.io + cơ chế tự reconnect.
+- 🔐 Auth đầy đủ: Email/password + Google OAuth, JWT 7 ngày, session Passport.
+- 💬 Tin nhắn lưu MongoDB, hỗ trợ recall, reply, mention, reaction, tìm kiếm cục bộ.
+- 📎 Media hub: upload ảnh/file (10 MB), preview trực tiếp, voice message thu âm trong browser.
+- 📞 WebRTC: gọi thoại & video 1-1, trạng thái cuộc gọi realtime, mute/camera toggle.
+- 🌓 Dark mode, bộ lọc từ khóa, danh sách phòng online, lưu state cục bộ an toàn theo user.
 
 ---
 
-## 📁 Cấu trúc Dự án
+## 🚀 Tính năng nổi bật
 
+| Nhóm | Chi tiết đã triển khai |
+|------|------------------------|
+| **Messaging** | Socket.io messaging, lịch sử MongoDB (50 tin gần nhất/room), thu hồi bất kỳ lúc nào, reply có @tag, highlight mention, reaction emoji (thả 😍🔥💯…), search nội bộ, System log join/leave. |
+| **Rooms & Users** | Tạo/xóa phòng, lưu membership vào MongoDB, danh sách phòng cá nhân, thống kê user online, health check, phân quyền chủ phòng. |
+| **Multimedia** | Upload ảnh/file qua `multer`, preview image/PDF/Word, giới hạn 10 MB + validate MIME, voice message bằng MediaRecorder với waveform player. |
+| **Calls** | WebRTC 1-1 voice/video, signaling qua Socket.io (`call:*` events), Call modal giàu tính năng (mute, toggle camera, kết thúc). |
+| **Productivity** | Dark/light mode, panel cài đặt, search message, typing indicator, sidebar rooms, lưu state per-user trong localStorage (kèm kiểm tra chủ sở hữu). |
+| **Bảo mật** | Bcrypt 10 rounds, JWT 7 ngày, verify token middleware, CORS whitelist, express-session cho OAuth, upload path tách biệt, log lỗi chuẩn hóa. |
+
+---
+
+## 🔐 Authentication & Authorization
+- **Đăng ký/đăng nhập local**: kiểm tra trùng username/email, hash password, trả JWT + thông tin user.
+- **Google OAuth 2.0**: Passport strategy `passport-google-oauth20`, session-based flow, liên kết tài khoản nếu email trùng.
+- **JWT Guard**: middleware `verifyToken` bảo vệ `/api/auth/me`, socket handshake truyền token trong `auth`.
+- **User profile**: endpoint `/api/auth/me` trả `id/username/email/avatar`.
+- **MongoDB persistence**: models `User`, `Room`, `Message` lưu provider, avatar, room membership, file metadata, reply, mentions, reactions.
+
+👉 Chi tiết cấu hình xem thêm `AUTH_SETUP.md`.
+
+---
+
+## 🎧 Chia sẻ nội dung & cuộc gọi
+- **Upload pipeline**: `POST /api/messages/upload` (multer) lưu file vào `backend/uploads`, auto trả metadata để phát broadcast qua Socket.
+- **Voice message**: ghi âm trong `MessageInput`, convert sang WebM, gửi như file audio, phát với waveform trong `ChatMessage`.
+- **Thu hồi tin nhắn**: sự kiện `message:recall` xoá file khỏi disk nếu có, cập nhật `isRecalled`, broadcast tới mọi user.
+- **Reaction & Mention**: backend lưu `message.reactions` & `mentions`, frontend render badge + tooltips.
+- **WebRTC calls**: events `call:offer`, `call:answer`, `call:answer-sdp`, `call:ice-candidate`, `call:end`, modal hỗ trợ mute/camera toggle, reject/accept.
+
+---
+
+## 🏗️ Kiến trúc & Công nghệ
+
+| Layer | Công nghệ | Vai trò |
+|-------|-----------|---------|
+| Frontend | Next.js 14, React 18, TypeScript, Tailwind CSS, Socket.io Client | Auth UI, room selector, chat workspace, call modal, local state + storage. |
+| Backend | Node.js, Express, Socket.io, MongoDB (Mongoose), Multer, Passport, express-session | REST API, realtime hub, upload file, WebRTC signaling, auth, health endpoints. |
+| Storage | MongoDB + disk `backend/uploads` | Persist user, room, message (kèm file/reply/mentions/reactions). |
+| Realtime | `handlers/socketHandlers.js` | Room lifecycle, message send/recall/reaction, typing indicator, WebRTC signaling, in-memory users map. |
+
+### Cấu trúc thư mục
 ```
 ChatApp-Socket/
-├── 📂 backend/              # Backend Server
-│   ├── server.js            # Server chính với Socket.io
-│   ├── package.json         # Dependencies backend
-│   └── .env.example         # Template biến môi trường
-│
-├── 📂 frontend/             # Frontend Application
-│   ├── 📂 app/              # Next.js App Router
-│   │   ├── layout.tsx       # Layout gốc
-│   │   ├── page.tsx         # Trang chat chính
-│   │   └── globals.css      # Styles toàn cục
-│   ├── 📂 components/       # React Components
-│   │   ├── ChatRoom.tsx     # Component phòng chat
-│   │   ├── LoginForm.tsx    # Form đăng nhập/tham gia
-│   │   ├── MessageList.tsx  # Danh sách tin nhắn
-│   │   ├── MessageInput.tsx # Input gửi tin nhắn
-│   │   └── UserList.tsx      # Danh sách người dùng
-│   ├── package.json         # Dependencies frontend
-│   └── next.config.js       # Cấu hình Next.js
-│
-└── package.json             # Root scripts
+├── backend/
+│   ├── server.js                # Khởi tạo Express + Socket.io + MongoDB
+│   ├── controllers/             # user / room / message logic
+│   ├── handlers/socketHandlers.js
+│   ├── routes/                  # /api/auth, /api/rooms, /api/messages
+│   ├── models/                  # User, Room, Message schemas
+│   ├── config/                  # passport, multer
+│   └── middleware/              # auth guard, error handler
+├── frontend/
+│   ├── app/                     # Next.js pages (auth, chat)
+│   ├── components/              # ChatRoom, MessageInput, CallModal...
+│   └── styles/configs           # Tailwind, tsconfig, next config
+└── package.json                 # Scripts chạy cả front/back
 ```
 
 ---
 
-## 🛠️ Cài đặt
+## ⚡ Bắt đầu nhanh
 
-### Yêu cầu hệ thống
+### Yêu cầu
+- Node.js ≥ 18 & npm ≥ 9
+- MongoDB (local/Docker/Atlas)
+- Google Cloud project (nếu dùng OAuth)
 
-- **Node.js** >= 18.0.0
-- **npm** >= 9.0.0
-- **Git**
-
-### Bước 1: Clone dự án
-
+### Cài đặt
 ```bash
 git clone https://github.com/yourusername/ChatApp-Socket.git
 cd ChatApp-Socket
-```
-
-### Bước 2: Cài đặt dependencies
-
-**Cài đặt tất cả (khuyến nghị):**
-```bash
 npm run install:all
 ```
 
-**Hoặc cài đặt riêng lẻ:**
-```bash
-# Root dependencies
-npm install
-
-# Backend dependencies
-cd backend && npm install && cd ..
-
-# Frontend dependencies
-cd frontend && npm install && cd ..
-```
-
-### Bước 3: Cấu hình biến môi trường
-
-**Backend** - Tạo file `backend/.env`:
+### Biến môi trường
+`backend/.env`
 ```env
 PORT=3001
 FRONTEND_URL=http://localhost:3000
 NODE_ENV=development
+MONGO_URI=mongodb://localhost:27017/chatapp
+JWT_SECRET=change-me
+SESSION_SECRET=change-me-too
+GOOGLE_CLIENT_ID=...
+GOOGLE_CLIENT_SECRET=...
+GOOGLE_CALLBACK_URL=http://localhost:3001/api/auth/google/callback
 ```
 
-**Frontend** - Tạo file `frontend/.env.local`:
+`frontend/.env.local`
 ```env
 NEXT_PUBLIC_SOCKET_URL=http://localhost:3001
+NEXT_PUBLIC_API_URL=http://localhost:3001
 ```
 
----
-
-## 🚀 Sử dụng
-
-### Chế độ Development
-
-**Chạy cả hai server cùng lúc:**
+### Chạy Development
 ```bash
-npm run dev
-```
-
-**Hoặc chạy riêng lẻ:**
-
-<details>
-<summary><b>Terminal 1 - Backend Server</b></summary>
-
-```bash
+npm run dev          # chạy backend + frontend cùng lúc
+# hoặc
 npm run dev:backend
-# hoặc
-cd backend && npm run dev
-```
-</details>
-
-<details>
-<summary><b>Terminal 2 - Frontend Server</b></summary>
-
-```bash
 npm run dev:frontend
-# hoặc
-cd frontend && npm run dev
 ```
-</details>
 
-### Chế độ Production
-
-**Backend:**
+### Production
 ```bash
-cd backend
-npm start
+# Backend
+cd backend && npm start
+
+# Frontend
+cd frontend && npm run build && npm start
 ```
 
-**Frontend:**
-```bash
-cd frontend
-npm run build
-npm start
-```
-
-### Truy cập ứng dụng
-
-- 🌐 **Frontend**: [http://localhost:3000](http://localhost:3000)
-- 🔌 **Backend API**: [http://localhost:3001](http://localhost:3001)
-- ❤️ **Health Check**: [http://localhost:3001/health](http://localhost:3001/health)
+### URL mặc định
+- Frontend: http://localhost:3000
+- Backend API / Socket: http://localhost:3001
+- Health check: GET http://localhost:3001/health
 
 ---
 
-## 🔧 Cấu hình
+## 📚 API REST
 
-### Backend Environment Variables
+### Auth (`/api/auth`)
+| Method | Endpoint | Mô tả |
+|--------|----------|-------|
+| `POST` | `/register` | Đăng ký user mới `{ username, email, password }` |
+| `POST` | `/login` | Đăng nhập local `{ email, password }` |
+| `GET`  | `/google` | Redirect Google OAuth |
+| `GET`  | `/google/callback` | Xử lý callback, tạo JWT, redirect frontend |
+| `GET`  | `/me` *(Bearer token)* | Lấy thông tin user hiện tại |
 
-| Biến | Mô tả | Mặc định |
-|------|-------|----------|
-| `PORT` | Cổng server | `3001` |
-| `FRONTEND_URL` | URL frontend cho CORS | `http://localhost:3000` |
-| `NODE_ENV` | Môi trường | `development` |
+### Rooms (`/api/rooms`)
+| Method | Endpoint | Mô tả |
+|--------|----------|-------|
+| `GET`  | `/` | Danh sách phòng (name, createdBy, memberCount, createdAt) |
 
-### Frontend Environment Variables
+### Messages (`/api/messages`)
+| Method | Endpoint | Mô tả |
+|--------|----------|-------|
+| `POST` | `/upload` | Upload file/voice qua `multipart/form-data` (fields: `file`, `username`, `room`, optional `text`, `replyTo`, `mentions`) |
 
-| Biến | Mô tả | Mặc định |
-|------|-------|----------|
-| `NEXT_PUBLIC_SOCKET_URL` | URL server Socket.io | `http://localhost:3001` |
+### Misc
+| Method | Endpoint | Mô tả |
+|--------|----------|-------|
+| `GET`  | `/api/users` | Danh sách user đang online (từ socket map) |
+| `GET`  | `/health` | Kiểm tra trạng thái server |
 
 ---
 
 ## 📡 Socket.io Events
 
 ### Client → Server
-
-| Event | Payload | Mô tả |
-|-------|---------|-------|
-| `user:join` | `{username, room}` | Tham gia phòng chat |
-| `message:send` | `{text}` | Gửi tin nhắn |
-| `typing:start` | - | Bắt đầu chỉ báo đang gõ |
-| `typing:stop` | - | Dừng chỉ báo đang gõ |
+| Event | Payload | Ghi chú |
+|-------|---------|---------|
+| `room:create` | `{ username, room }` | Tạo phòng, lưu Mongo |
+| `room:delete` | `{ username, room }` | Chủ phòng xoá phòng |
+| `user:join` | `{ username, room }` | Tham gia phòng |
+| `user:leave` | `{ room }` | Rời phòng |
+| `user:getRooms` | - | Lấy phòng user đang tham gia |
+| `user:getRoomInfo` | `{ room }` | Lấy users + messages |
+| `message:send` | `{ text, room, file?, replyTo?, mentions? }` | Gửi tin nhắn |
+| `message:recall` | `{ messageId, room }` | Thu hồi tin |
+| `message:reaction` | `{ messageId, emoji, room }` | Thêm/bỏ reaction |
+| `typing:start` / `typing:stop` | `{ room }` | Chỉ báo đang gõ |
+| `call:offer` / `call:answer` / `call:answer-sdp` / `call:ice-candidate` / `call:end` | WebRTC signaling |
 
 ### Server → Client
-
-| Event | Payload | Mô tả |
-|-------|---------|-------|
-| `connect` | - | Socket đã kết nối |
-| `disconnect` | - | Socket đã ngắt kết nối |
-| `error` | `{message}` | Có lỗi xảy ra |
-| `room:info` | `{room, users, messages}` | Thông tin phòng |
-| `message:receive` | `{id, username, text, timestamp}` | Tin nhắn mới |
-| `user:joined` | `{username, message, timestamp}` | Người dùng đã tham gia |
-| `user:left` | `{username, message, timestamp}` | Người dùng đã rời |
-| `typing:start` | `{username}` | Người dùng bắt đầu gõ |
-| `typing:stop` | `{username}` | Người dùng dừng gõ |
-
----
-
-## 🧪 Kiểm thử
-
-1. Mở nhiều tab/cửa sổ trình duyệt
-2. Tham gia cùng một phòng với các username khác nhau
-3. Gửi tin nhắn và xác minh giao hàng real-time
-4. Kiểm thử chỉ báo đang gõ
-5. Kiểm thử thông báo người dùng tham gia/rời
+| Event | Payload | Ghi chú |
+|-------|---------|---------|
+| `room:created` | `{ room, message, timestamp }` | Kết quả tạo phòng |
+| `room:info` | `{ room, users, messages, createdBy }` | Snapshot phòng |
+| `room:deleted` | `{ room, message }` | Phòng bị xoá, buộc leave |
+| `user:rooms` | `{ rooms }` | Danh sách phòng user |
+| `user:joined` / `user:left` | `{ username, message, timestamp, room }` | Log hệ thống |
+| `message:receive` | `Message` | Tin nhắn mới (text/file/voice) |
+| `message:recalled` | `{ messageId, recalledBy, recalledAt }` | Tin bị thu hồi |
+| `message:reaction` | `{ messageId, reactions }` | Danh sách reaction cập nhật |
+| `typing:start` / `typing:stop` | `{ username, room }` | Hiển thị người đang gõ |
+| `call:incoming` / `call:answer` / `call:answer-sdp` / `call:ice-candidate` / `call:rejected` / `call:ended` | Trạng thái cuộc gọi |
 
 ---
 
-## 🛠️ Công nghệ
-
-### Frontend
-- **Next.js 14** - React framework với App Router
-- **React 18** - UI library
-- **TypeScript** - Type safety
-- **Tailwind CSS** - Utility-first CSS framework
-- **Socket.io Client** - Real-time communication
-
-### Backend
-- **Node.js** - JavaScript runtime
-- **Express** - Web framework
-- **Socket.io** - WebSocket library
-- **CORS** - Cross-origin resource sharing
+## 💡 UX nổi bật
+- Room selector hiển thị danh sách tham gia + nút leave nhanh.
+- Header chat: trạng thái kết nối, dark/light toggle, search box.
+- MessageInput: dropdown gợi ý @mention, upload icon, voice recorder với timer & waveform, counter ký tự.
+- Message bubble: reply preview, image/file/audio preview, reaction picker, recall button.
+- User list: online indicator, nút gọi voice/video ngay từ popup.
 
 ---
 
-## 📝 Lưu ý
+## 🧪 Kiểm thử & QA
+| Script | Mục đích |
+|--------|---------|
+| `node test-auth.js` | Smoke test đăng ký & đăng nhập API |
+| `node test-frontend-backend.js` | Kiểm tra health + login endpoint từ frontend |
+| Manual | Mở ≥2 tab, gửi text/file/voice, recall, reaction, initiate voice/video call |
 
-- ⚠️ Tin nhắn được lưu trong bộ nhớ (không lưu vào database)
-- 📊 Tối đa 100 tin nhắn mỗi phòng (tin nhắn cũ sẽ bị xóa)
-- 🏠 Hỗ trợ nhiều phòng đồng thời
-- 🔄 Tự động kết nối lại khi mất kết nối
-
----
-
-## 🐛 Xử lý Sự cố
-
-### Vấn đề Kết nối
-
-- ✅ Kiểm tra backend đang chạy trên cổng đúng
-- ✅ Xác minh `NEXT_PUBLIC_SOCKET_URL` khớp với URL backend
-- ✅ Kiểm tra cài đặt CORS trong backend
-- ✅ Đảm bảo firewall cho phép kết nối
-
-### Vấn đề Build
-
-- ✅ Xóa thư mục `.next`: `rm -rf frontend/.next`
-- ✅ Xóa `node_modules` và cài đặt lại
-- ✅ Kiểm tra phiên bản Node.js (yêu cầu 18+)
+Khuyến nghị khởi chạy MongoDB nhanh bằng Docker:
+```powershell
+docker run -d --name chatapp-mongo -p 27017:27017 -v chatapp-mongo-data:/data/db mongo:latest
+```
 
 ---
 
-## 👥 Nhóm Phát triển
-
-Dự án **ChatApp-Socket** được phát triển bởi nhóm phát triển ChatApp-Socket.
-
-### Đóng góp
-
-Chúng tôi hoan nghênh mọi đóng góp! Vui lòng tạo issue hoặc pull request.
-
----
-
-## 📄 Giấy phép
-
-Dự án này được phân phối dưới giấy phép **MIT**. Xem file `LICENSE` để biết thêm chi tiết.
+## 🐛 Troubleshooting
+- **Không kết nối Socket**: xác minh `FRONTEND_URL` khớp origin thực tế, token JWT không hết hạn, firewall mở port 3001.
+- **OAuth lỗi**: kiểm tra `GOOGLE_CLIENT_ID/SECRET`, redirect URI đúng, bật Google Identity API.
+- **Upload thất bại**: tệp >10 MB hoặc MIME không nằm trong whitelist, thư mục `backend/uploads` cần quyền ghi.
+- **WebRTC không call được**: trình duyệt cần HTTPS khi deploy, nếu cả hai client nằm sau NAT → cấu hình TURN server riêng, xem console để tra ICE logs.
 
 ---
 
 ## 🔮 Roadmap
-
-- [ ] Lưu trữ database (MongoDB/PostgreSQL)
-- [ ] Xác thực người dùng (JWT, OAuth)
-- [ ] Tin nhắn riêng tư
-- [ ] Chia sẻ file/hình ảnh
-- [ ] Phản ứng tin nhắn (emoji reactions)
-- [ ] Tìm kiếm tin nhắn
-- [ ] Chế độ tối (Dark mode)
-- [ ] Voice/Video call
+- [ ] Private chat / DM
+- [ ] Full-text search & pin tin nhắn
+- [ ] Spam & content moderation
+- [ ] Ghi hình cuộc gọi & lưu cloud
+- [ ] Slash command / bot
+- [ ] Multi-device session sync nâng cao
 
 ---
 
 <div align="center">
 
-**Được tạo với ❤️ bởi nhóm phát triển ChatApp-Socket**
-
-⭐ Nếu bạn thích dự án này, hãy cho chúng tôi một ngôi sao!
+**Được tạo với ❤️ bởi nhóm 22 phát triển ChatApp-Socket**  
+Nếu dự án giúp ích cho bạn, đừng quên ⭐ trên GitHub!
 
 </div>
+
