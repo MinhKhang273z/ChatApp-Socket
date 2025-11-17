@@ -19,7 +19,7 @@ interface ChatRoomProps {
   users: string[]
   typingUsers: string[]
   roomCreatedBy?: string
-  onSendMessage: (text: string) => void
+  onSendMessage: (text: string, file?: File) => void
   onTyping: (isTyping: boolean) => void
   onLeaveRoom: () => void
   onDeleteRoom?: () => void

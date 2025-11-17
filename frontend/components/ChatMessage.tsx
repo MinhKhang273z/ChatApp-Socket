@@ -1,10 +1,19 @@
 'use client'
 
+interface FileInfo {
+  filename: string
+  originalName: string
+  mimetype: string
+  size: number
+  url: string
+}
+
 interface Message {
   id: string
   username: string
   text: string
   timestamp: Date
+  file?: FileInfo
 }
 
 interface ChatMessageProps {
@@ -20,6 +29,17 @@ export default function ChatMessage({ message, isOwnMessage, isSystemMessage, is
       hour: '2-digit',
       minute: '2-digit',
     })
+  }
+
+  const isImage = (mimetype: string) => {
+    return mimetype.startsWith('image/')
+  }
+
+  const getFileIcon = (mimetype: string) => {
+    if (mimetype.startsWith('image/')) return '🖼️'
+    if (mimetype === 'application/pdf') return '📄'
+    if (mimetype.includes('word')) return '📝'
+    return '📎'
   }
 
   return (
@@ -50,7 +70,51 @@ export default function ChatMessage({ message, isOwnMessage, isSystemMessage, is
             {message.username}
           </div>
         )}
-        <div className="text-sm break-words whitespace-pre-wrap">{message.text}</div>
+        
+        {/* Hiển thị file nếu có */}
+        {message.file && (
+          <div className="mb-2">
+            {isImage(message.file.mimetype) ? (
+              <a 
+                href={`http://localhost:3001${message.file.url}`} 
+                target="_blank" 
+                rel="noopener noreferrer"
+                className="block"
+              >
+                <img
+                  src={`http://localhost:3001${message.file.url}`}
+                  alt={message.file.originalName}
+                  className="max-w-full rounded-lg cursor-pointer hover:opacity-90 transition"
+                  style={{ maxHeight: '300px' }}
+                />
+              </a>
+            ) : (
+              <a
+                href={`http://localhost:3001${message.file.url}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={`flex items-center gap-2 p-2 rounded ${
+                  isOwnMessage
+                    ? 'bg-blue-700 hover:bg-blue-800'
+                    : isDarkMode
+                    ? 'bg-gray-600 hover:bg-gray-500'
+                    : 'bg-gray-300 hover:bg-gray-400'
+                } transition`}
+              >
+                <span className="text-2xl">{getFileIcon(message.file.mimetype)}</span>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium truncate">{message.file.originalName}</p>
+                  <p className="text-xs opacity-75">{(message.file.size / 1024).toFixed(1)} KB</p>
+                </div>
+              </a>
+            )}
+          </div>
+        )}
+        
+        {message.text && (
+          <div className="text-sm break-words whitespace-pre-wrap">{message.text}</div>
+        )}
+        
         <div className={`text-xs mt-1 ${
           isOwnMessage
             ? 'text-blue-100'
