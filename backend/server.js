@@ -22,6 +22,12 @@ import { setupSocketListeners, users } from './handlers/socketHandlers.js';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler.js';
 import userRoutes from './routes/userRoutes.js';
 import roomRoutes from './routes/roomRoutes.js';
+import messageRoutes from './routes/messageRoutes.js';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 // --- KẾT NỐI MONGODB ---
 const MONGO_URI = process.env.MONGO_URI; 
@@ -93,6 +99,12 @@ app.use('/api/auth', userRoutes);
 
 // Room routes
 app.use('/api/rooms', roomRoutes);
+
+// Message routes (upload file)
+app.use('/api/messages', messageRoutes);
+
+// Serve static files (uploaded files)
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 /**
  * GET /api/users (Lấy danh sách user đang online)

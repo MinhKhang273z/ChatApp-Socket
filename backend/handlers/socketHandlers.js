@@ -163,32 +163,38 @@ export const handleUserJoin = async (socket, data) => {
 };
 
 /**
- * Xử lý khi user gửi message (ĐÃ SỬA LỖI VALIDATION)
+ * Xử lý khi user gửi message (ĐÃ SỬA LỖI VALIDATION + HỖ TRỢ FILE)
  */
 export const handleMessageSend = async (socket, data) => {
   const user = users.get(socket.id);
   if (!user) { return; }
   
   // PHỤC HỒI CODE VALIDATION BỊ THIẾU
-  const { text, room } = data;
-  if (!text || !text.trim()) { return; }
+  const { text, room, file } = data;
+  // Cho phép gửi nếu có text HOẶC file
+  if ((!text || !text.trim()) && !file) { return; }
   const roomName = room || Array.from(user.rooms)[0];
   if (!roomName || !user.rooms.has(roomName)) { return; }
   // ------------------------------------
 
   const message = {
     username: user.username,
-    text: text.trim(),
+    text: text ? text.trim() : '',
     room: roomName,
     timestamp: new Date()
   };
+
+  // Nếu có file, thêm thông tin file
+  if (file) {
+    message.file = file;
+  }
   
   try {
     const newMessage = new Message(message);
     const savedMessage = await newMessage.save();
     const io = socket.server;
     io.to(roomName).emit('message:receive', savedMessage);
-    console.log(`💬 ${user.username} in ${roomName}: ${text} (saved to DB)`);
+    console.log(`💬 ${user.username} in ${roomName}: ${text || '[file]'} (saved to DB)`);
   } catch (err) {
     console.error('Lỗi khi lưu tin nhắn:', err);
     socket.emit('error', { message: 'Không thể gửi tin nhắn' });
