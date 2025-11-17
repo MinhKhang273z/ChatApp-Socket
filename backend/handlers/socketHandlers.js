@@ -163,14 +163,14 @@ export const handleUserJoin = async (socket, data) => {
 };
 
 /**
- * Xử lý khi user gửi message (ĐÃ SỬA LỖI VALIDATION + HỖ TRỢ FILE)
+ * Xử lý khi user gửi message (ĐÃ SỬA LỖI VALIDATION + HỖ TRỢ FILE + REPLY + MENTIONS)
  */
 export const handleMessageSend = async (socket, data) => {
   const user = users.get(socket.id);
   if (!user) { return; }
   
   // PHỤC HỒI CODE VALIDATION BỊ THIẾU
-  const { text, room, file } = data;
+  const { text, room, file, replyTo, mentions } = data;
   // Cho phép gửi nếu có text HOẶC file
   if ((!text || !text.trim()) && !file) { return; }
   const roomName = room || Array.from(user.rooms)[0];
@@ -187,6 +187,16 @@ export const handleMessageSend = async (socket, data) => {
   // Nếu có file, thêm thông tin file
   if (file) {
     message.file = file;
+  }
+
+  // Nếu có reply, thêm thông tin reply
+  if (replyTo) {
+    message.replyTo = replyTo;
+  }
+
+  // Nếu có mentions, thêm danh sách mentions
+  if (mentions && mentions.length > 0) {
+    message.mentions = mentions;
   }
   
   try {
@@ -481,7 +491,61 @@ export const handleMessageRecall = async (socket, data) => {
 };
 
 /**
- * Setup tất cả socket event listeners (Đã thêm recall)
+ * Xử lý reaction emoji
+ */
+export const handleMessageReaction = async (socket, data) => {
+  const user = users.get(socket.id);
+  if (!user) { return; }
+  
+  const { messageId, emoji, room } = data;
+  if (!messageId || !emoji || !room) { return; }
+  
+  try {
+    const message = await Message.findById(messageId);
+    if (!message) {
+      socket.emit('error', { message: 'Tin nhắn không tồn tại' });
+      return;
+    }
+    
+    // Kiểm tra user đã react với emoji này chưa
+    const existingReaction = message.reactions.find(
+      r => r.username === user.username && r.emoji === emoji
+    );
+    
+    if (existingReaction) {
+      // Nếu đã react, thì remove reaction
+      message.reactions = message.reactions.filter(
+        r => !(r.username === user.username && r.emoji === emoji)
+      );
+    } else {
+      // Remove reaction cũ của user (nếu có) và thêm reaction mới
+      message.reactions = message.reactions.filter(r => r.username !== user.username);
+      message.reactions.push({
+        emoji: emoji,
+        username: user.username,
+        timestamp: new Date()
+      });
+    }
+    
+    await message.save();
+    
+    // Broadcast reaction update
+    const io = socket.server;
+    io.to(room).emit('message:reaction', {
+      messageId: messageId,
+      reactions: message.reactions
+    });
+    
+    console.log(`😀 Reaction ${emoji} by ${user.username} on message ${messageId}`);
+    
+  } catch (err) {
+    console.error('Lỗi khi xử lý reaction:', err);
+    socket.emit('error', { message: 'Không thể thêm reaction' });
+  }
+};
+
+/**
+ * Setup tất cả socket event listeners (Đã thêm recall + reaction)
  */
 export const setupSocketListeners = (socket) => {
   console.log(`🔗 User connected: ${socket.id}`);
@@ -494,6 +558,7 @@ export const setupSocketListeners = (socket) => {
   socket.on('user:getRoomInfo', (data) => handleGetRoomInfo(socket, data));
   socket.on('message:send', (data) => handleMessageSend(socket, data));
   socket.on('message:recall', (data) => handleMessageRecall(socket, data));
+  socket.on('message:reaction', (data) => handleMessageReaction(socket, data));
   socket.on('typing:start', (data) => handleTypingStart(socket, data));
   socket.on('typing:stop', (data) => handleTypingStop(socket, data));
   

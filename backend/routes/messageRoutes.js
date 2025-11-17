@@ -40,6 +40,24 @@ router.post('/upload', upload.single('file'), async (req, res) => {
       };
     }
 
+    // Nếu có reply, thêm thông tin reply
+    if (req.body.replyTo) {
+      try {
+        messageData.replyTo = JSON.parse(req.body.replyTo);
+      } catch (e) {
+        console.error('Error parsing replyTo:', e);
+      }
+    }
+
+    // Nếu có mentions, thêm danh sách mentions
+    if (req.body.mentions) {
+      try {
+        messageData.mentions = JSON.parse(req.body.mentions);
+      } catch (e) {
+        console.error('Error parsing mentions:', e);
+      }
+    }
+
     // Lưu vào database
     const newMessage = new Message(messageData);
     const savedMessage = await newMessage.save();

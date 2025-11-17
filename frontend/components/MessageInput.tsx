@@ -2,16 +2,39 @@
 
 import { useState, useRef, useEffect } from 'react'
 
+interface ReplyInfo {
+  messageId: string
+  username: string
+  text: string
+  file?: {
+    filename: string
+    originalName: string
+    mimetype: string
+  }
+}
+
+interface Message {
+  id: string
+  username: string
+  text: string
+  timestamp: Date
+  file?: any
+  replyTo?: ReplyInfo
+}
+
 interface MessageInputProps {
-  onSendMessage: (text: string, file?: File) => void
+  onSendMessage: (text: string, file?: File, mentions?: string[]) => void
   onTyping: (isTyping: boolean) => void
+  users: string[]
+  replyingTo: Message | null
+  onCancelReply: () => void
   isDarkMode?: boolean
 }
 
 const MAX_MESSAGE_LENGTH = 1000
 const TYPING_TIMEOUT = 2000 // 2 giây
 
-export default function MessageInput({ onSendMessage, onTyping, isDarkMode = false }: MessageInputProps) {
+export default function MessageInput({ onSendMessage, onTyping, users, replyingTo, onCancelReply, isDarkMode = false }: MessageInputProps) {
   const [message, setMessage] = useState('')
   const [isTyping, setIsTyping] = useState(false)
   const [error, setError] = useState('')
@@ -20,6 +43,10 @@ export default function MessageInput({ onSendMessage, onTyping, isDarkMode = fal
   const [isRecording, setIsRecording] = useState(false)
   const [audioBlob, setAudioBlob] = useState<Blob | null>(null)
   const [recordingTime, setRecordingTime] = useState(0)
+  const [showMentions, setShowMentions] = useState(false)
+  const [mentionQuery, setMentionQuery] = useState('')
+  const [mentionStartPos, setMentionStartPos] = useState(0)
+  const [selectedMentions, setSelectedMentions] = useState<string[]>([])
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -39,6 +66,7 @@ export default function MessageInput({ onSendMessage, onTyping, isDarkMode = fal
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value
+    const cursorPos = e.target.selectionStart || 0
 
     // Validate độ dài
     if (value.length > MAX_MESSAGE_LENGTH) {
@@ -48,6 +76,23 @@ export default function MessageInput({ onSendMessage, onTyping, isDarkMode = fal
 
     setError('')
     setMessage(value)
+
+    // Handle mentions (@)
+    const lastAtIndex = value.lastIndexOf('@', cursorPos - 1)
+    if (lastAtIndex !== -1) {
+      const textAfterAt = value.substring(lastAtIndex + 1, cursorPos)
+      const spaceIndex = textAfterAt.indexOf(' ')
+      
+      if (spaceIndex === -1 && textAfterAt.length <= 20) {
+        setShowMentions(true)
+        setMentionQuery(textAfterAt.toLowerCase())
+        setMentionStartPos(lastAtIndex)
+      } else {
+        setShowMentions(false)
+      }
+    } else {
+      setShowMentions(false)
+    }
 
     // Handle typing indicator
     if (!isTyping && value.trim().length > 0) {
@@ -73,6 +118,27 @@ export default function MessageInput({ onSendMessage, onTyping, isDarkMode = fal
       onTyping(false)
     }, TYPING_TIMEOUT)
   }
+
+  const handleMentionSelect = (username: string) => {
+    const beforeMention = message.substring(0, mentionStartPos)
+    const afterMention = message.substring(inputRef.current?.selectionStart || message.length)
+    const newMessage = `${beforeMention}@${username} ${afterMention}`
+    
+    setMessage(newMessage)
+    setShowMentions(false)
+    setSelectedMentions(prev => [...prev.filter(u => u !== username), username])
+    
+    // Focus back to input
+    setTimeout(() => {
+      inputRef.current?.focus()
+      const newPos = beforeMention.length + username.length + 2
+      inputRef.current?.setSelectionRange(newPos, newPos)
+    }, 0)
+  }
+
+  const filteredUsers = users.filter(user => 
+    user.toLowerCase().includes(mentionQuery) && user !== inputRef.current?.closest('form')?.dataset.currentUser
+  )
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -200,9 +266,10 @@ export default function MessageInput({ onSendMessage, onTyping, isDarkMode = fal
       if (audioBlob) {
         await sendVoiceMessage()
       } else {
-        await onSendMessage(trimmedMessage, selectedFile || undefined)
+        await onSendMessage(trimmedMessage, selectedFile || undefined, selectedMentions)
         setMessage('')
         setSelectedFile(null)
+        setSelectedMentions([])
         setError('')
         if (fileInputRef.current) {
           fileInputRef.current.value = ''
@@ -241,7 +308,33 @@ export default function MessageInput({ onSendMessage, onTyping, isDarkMode = fal
 
   return (
     <div className={`border-t ${isDarkMode ? 'border-gray-700 bg-gray-800' : 'border-gray-200 bg-gray-50'} p-4`}>
-      <form onSubmit={handleSubmit} className="space-y-2">
+      <form onSubmit={handleSubmit} className="space-y-2" data-current-user={inputRef.current?.closest('form')?.dataset.currentUser}>
+        {/* Reply Preview */}
+        {replyingTo && (
+          <div className={`flex items-start gap-2 p-3 rounded-lg border-l-4 border-blue-500 ${
+            isDarkMode ? 'bg-gray-700' : 'bg-blue-50'
+          }`}>
+            <div className="flex-1">
+              <div className="flex items-center gap-2 mb-1">
+                <span className="text-sm font-medium text-blue-600">↳ Trả lời {replyingTo.username}</span>
+              </div>
+              <p className={`text-sm ${isDarkMode ? 'text-gray-300' : 'text-gray-600'} line-clamp-2`}>
+                {replyingTo.text || (replyingTo.file ? `📎 ${replyingTo.file.originalName}` : 'Tin nhắn')}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={onCancelReply}
+              className={`p-1 rounded hover:bg-red-500 hover:text-white transition ${
+                isDarkMode ? 'text-gray-400' : 'text-gray-600'
+              }`}
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+        )}
         {/* File preview */}
         {selectedFile && (
           <div className={`flex items-center gap-2 p-2 rounded-lg ${isDarkMode ? 'bg-gray-700' : 'bg-gray-100'}`}>
@@ -379,7 +472,39 @@ export default function MessageInput({ onSendMessage, onTyping, isDarkMode = fal
           </div>
         )}
 
-        <div className="flex gap-2">
+        <div className="relative flex gap-2">
+          {/* Mentions dropdown */}
+          {showMentions && filteredUsers.length > 0 && (
+            <div className={`absolute bottom-full left-0 mb-2 w-64 rounded-lg shadow-lg border z-50 ${
+              isDarkMode ? 'bg-gray-700 border-gray-600' : 'bg-white border-gray-200'
+            }`}>
+              <div className="p-2">
+                <div className={`text-xs font-medium mb-2 ${isDarkMode ? 'text-gray-300' : 'text-gray-600'}`}>
+                  Mention người dùng
+                </div>
+                <div className="max-h-40 overflow-y-auto">
+                  {filteredUsers.map((user) => (
+                    <button
+                      key={user}
+                      type="button"
+                      onClick={() => handleMentionSelect(user)}
+                      className={`w-full text-left px-3 py-2 rounded-md text-sm hover:bg-blue-500 hover:text-white transition ${
+                        isDarkMode ? 'text-gray-200' : 'text-gray-800'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2">
+                        <div className="w-6 h-6 bg-blue-500 rounded-full flex items-center justify-center text-white text-xs font-bold">
+                          {user.charAt(0).toUpperCase()}
+                        </div>
+                        <span>@{user}</span>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* File upload button */}
           <input
             ref={fileInputRef}

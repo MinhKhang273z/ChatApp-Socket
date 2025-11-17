@@ -27,10 +27,12 @@ interface MessageListProps {
   currentUsername: string
   typingUsers: string[]
   onRecallMessage: (messageId: string) => void
+  onReplyMessage: (message: Message) => void
+  onReaction: (messageId: string, emoji: string) => void
   isDarkMode?: boolean
 }
 
-export default function MessageList({ messages, currentUsername, typingUsers, onRecallMessage, isDarkMode = false }: MessageListProps) {
+export default function MessageList({ messages, currentUsername, typingUsers, onRecallMessage, onReplyMessage, onReaction, isDarkMode = false }: MessageListProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
 
@@ -68,6 +70,8 @@ export default function MessageList({ messages, currentUsername, typingUsers, on
               isOwnMessage={isOwnMessage}
               isSystemMessage={isSystemMessage}
               onRecallMessage={onRecallMessage}
+              onReplyMessage={onReplyMessage}
+              onReaction={onReaction}
               isDarkMode={isDarkMode}
             />
           )

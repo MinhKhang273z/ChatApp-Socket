@@ -19,9 +19,13 @@ interface ChatRoomProps {
   users: string[]
   typingUsers: string[]
   roomCreatedBy?: string
-  onSendMessage: (text: string, file?: File) => void
+  onSendMessage: (text: string, file?: File, mentions?: string[]) => void
   onTyping: (isTyping: boolean) => void
   onRecallMessage: (messageId: string) => void
+  onReplyMessage: (message: Message) => void
+  onReaction: (messageId: string, emoji: string) => void
+  replyingTo: Message | null
+  onCancelReply: () => void
   onLeaveRoom: () => void
   onDeleteRoom?: () => void
   onAddRoom: () => void
@@ -42,6 +46,10 @@ export default function ChatRoom({
   onSendMessage,
   onTyping,
   onRecallMessage,
+  onReplyMessage,
+  onReaction,
+  replyingTo,
+  onCancelReply,
   onLeaveRoom,
   onDeleteRoom,
   onAddRoom,
@@ -233,11 +241,16 @@ export default function ChatRoom({
             currentUsername={username}
             typingUsers={typingUsers.filter(u => u !== username)}
             onRecallMessage={onRecallMessage}
+            onReplyMessage={onReplyMessage}
+            onReaction={onReaction}
             isDarkMode={isDarkMode}
           />
           <MessageInput
             onSendMessage={onSendMessage}
             onTyping={onTyping}
+            users={users}
+            replyingTo={replyingTo}
+            onCancelReply={onCancelReply}
             isDarkMode={isDarkMode}
           />
         </div>

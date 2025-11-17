@@ -16,6 +16,23 @@ interface FileInfo {
   url: string
 }
 
+interface ReplyInfo {
+  messageId: string
+  username: string
+  text: string
+  file?: {
+    filename: string
+    originalName: string
+    mimetype: string
+  }
+}
+
+interface Reaction {
+  emoji: string
+  username: string
+  timestamp: Date
+}
+
 interface Message {
   id: string
   username: string
@@ -25,6 +42,9 @@ interface Message {
   isRecalled?: boolean
   recalledAt?: Date
   recalledBy?: string
+  replyTo?: ReplyInfo
+  reactions?: Reaction[]
+  mentions?: string[]
 }
 
 interface User {
@@ -46,6 +66,7 @@ export default function Home() {
   const [messages, setMessages] = useState<Message[]>([])
   const [users, setUsers] = useState<string[]>([])
   const [typingUsers, setTypingUsers] = useState<Set<string>>(new Set())
+  const [replyingTo, setReplyingTo] = useState<Message | null>(null)
   const currentRoomRef = useRef<string>('')
 
   // WebRTC State
@@ -493,6 +514,15 @@ export default function Home() {
       })
     })
 
+    newSocket.on('message:reaction', (data: { messageId: string; reactions: Reaction[] }) => {
+      setMessages((prev) => prev.map(msg => {
+        const msgId = msg.id || (msg as any)._id
+        return (msgId === data.messageId || (msg as any)._id === data.messageId)
+          ? { ...msg, reactions: data.reactions }
+          : msg
+      }))
+    })
+
     // WebRTC Socket Events
     newSocket.on('call:incoming', async (data: { from: string; offer: RTCSessionDescriptionInit; callType: 'voice' | 'video' }) => {
       console.log('📞 Incoming call from:', data.from, 'Type:', data.callType)
@@ -717,8 +747,20 @@ export default function Home() {
     // Keep messages and users for when they come back
   }, [username])
 
-  const handleSendMessage = useCallback(async (text: string, file?: File) => {
+  const handleSendMessage = useCallback(async (text: string, file?: File, mentions?: string[]) => {
     if (!socket || (!text.trim() && !file) || !currentRoom) return
+    
+    // Prepare reply data
+    const replyData = replyingTo ? {
+      messageId: replyingTo.id || (replyingTo as any)._id,
+      username: replyingTo.username,
+      text: replyingTo.text,
+      file: replyingTo.file ? {
+        filename: replyingTo.file.filename,
+        originalName: replyingTo.file.originalName,
+        mimetype: replyingTo.file.mimetype
+      } : undefined
+    } : undefined
     
     // Nếu có file, upload qua HTTP API
     if (file) {
@@ -729,6 +771,12 @@ export default function Home() {
         formData.append('room', currentRoom)
         if (text.trim()) {
           formData.append('text', text.trim())
+        }
+        if (replyData) {
+          formData.append('replyTo', JSON.stringify(replyData))
+        }
+        if (mentions && mentions.length > 0) {
+          formData.append('mentions', JSON.stringify(mentions))
         }
 
         const response = await fetch('http://localhost:3001/api/messages/upload', {
@@ -746,7 +794,9 @@ export default function Home() {
         socket.emit('message:send', {
           text: data.message.text,
           room: currentRoom,
-          file: data.message.file
+          file: data.message.file,
+          replyTo: data.message.replyTo,
+          mentions: data.message.mentions
         })
       } catch (error) {
         console.error('Error uploading file:', error)
@@ -754,9 +804,17 @@ export default function Home() {
       }
     } else {
       // Chỉ có text, gửi bình thường
-      socket.emit('message:send', { text, room: currentRoom })
+      socket.emit('message:send', { 
+        text, 
+        room: currentRoom,
+        replyTo: replyData,
+        mentions: mentions
+      })
     }
-  }, [socket, currentRoom, username])
+    
+    // Clear reply state
+    setReplyingTo(null)
+  }, [socket, currentRoom, username, replyingTo])
 
   const handleTyping = useCallback((isTyping: boolean) => {
     if (!socket || !currentRoom) return
@@ -771,6 +829,15 @@ export default function Home() {
     if (!socket || !currentRoom) return
     console.log('🔄 Sending recall request for message:', messageId, 'in room:', currentRoom)
     socket.emit('message:recall', { messageId, room: currentRoom })
+  }, [socket, currentRoom])
+
+  const handleReplyMessage = useCallback((message: Message) => {
+    setReplyingTo(message)
+  }, [])
+
+  const handleReaction = useCallback((messageId: string, emoji: string) => {
+    if (!socket || !currentRoom) return
+    socket.emit('message:reaction', { messageId, emoji, room: currentRoom })
   }, [socket, currentRoom])
 
   // WebRTC Functions
@@ -1020,6 +1087,10 @@ export default function Home() {
         onSendMessage={handleSendMessage}
         onTyping={handleTyping}
         onRecallMessage={handleRecallMessage}
+        onReplyMessage={handleReplyMessage}
+        onReaction={handleReaction}
+        replyingTo={replyingTo}
+        onCancelReply={() => setReplyingTo(null)}
         onLeaveRoom={handleLeaveRoom}
         onDeleteRoom={handleDeleteRoom}
         onAddRoom={handleAddRoom}

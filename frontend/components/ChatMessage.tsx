@@ -158,6 +158,23 @@ interface FileInfo {
   url: string
 }
 
+interface ReplyInfo {
+  messageId: string
+  username: string
+  text: string
+  file?: {
+    filename: string
+    originalName: string
+    mimetype: string
+  }
+}
+
+interface Reaction {
+  emoji: string
+  username: string
+  timestamp: Date
+}
+
 interface Message {
   id: string
   username: string
@@ -167,6 +184,9 @@ interface Message {
   isRecalled?: boolean
   recalledAt?: Date
   recalledBy?: string
+  replyTo?: ReplyInfo
+  reactions?: Reaction[]
+  mentions?: string[]
 }
 
 interface ChatMessageProps {
@@ -174,10 +194,32 @@ interface ChatMessageProps {
   isOwnMessage: boolean
   isSystemMessage: boolean
   onRecallMessage: (messageId: string) => void
+  onReplyMessage: (message: Message) => void
+  onReaction: (messageId: string, emoji: string) => void
   isDarkMode?: boolean
 }
 
-export default function ChatMessage({ message, isOwnMessage, isSystemMessage, onRecallMessage, isDarkMode = false }: ChatMessageProps) {
+export default function ChatMessage({ message, isOwnMessage, isSystemMessage, onRecallMessage, onReplyMessage, onReaction, isDarkMode = false }: ChatMessageProps) {
+  const [showAllReactions, setShowAllReactions] = useState(false)
+  const reactionDropdownRef = useRef<HTMLDivElement>(null)
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (reactionDropdownRef.current && !reactionDropdownRef.current.contains(event.target as Node)) {
+        setShowAllReactions(false)
+      }
+    }
+
+    if (showAllReactions) {
+      document.addEventListener('mousedown', handleClickOutside)
+    }
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside)
+    }
+  }, [showAllReactions])
+
   const formatTime = (date: Date) => {
     return new Date(date).toLocaleTimeString('vi-VN', {
       hour: '2-digit',
@@ -218,6 +260,26 @@ export default function ChatMessage({ message, isOwnMessage, isSystemMessage, on
     }
   }
 
+  const handleReply = () => {
+    onReplyMessage(message)
+  }
+
+  const handleReactionClick = (emoji: string) => {
+    const messageId = message.id || (message as any)._id
+    onReaction(messageId, emoji)
+  }
+
+  const reactions = ['❤️', '👍', '😂', '😮', '😢', '😡']
+  const allReactions = ['❤️', '👍', '😂', '😮', '😢', '😡', '👏', '🔥', '💯', '🎉', '😍', '🤔', '😭', '🙄', '😴', '🤯']
+  
+  const renderMentions = (text: string) => {
+    if (!text) return text
+    
+    return text.replace(/@(\w+)/g, (match, username) => {
+      return `<span class="bg-blue-100 text-blue-800 px-1 rounded font-medium">@${username}</span>`
+    })
+  }
+
   // Nếu tin nhắn đã bị thu hồi
   if (message.isRecalled) {
     return (
@@ -238,47 +300,88 @@ export default function ChatMessage({ message, isOwnMessage, isSystemMessage, on
   }
 
   return (
-    <div className={`flex ${isOwnMessage ? 'justify-end' : 'justify-start'} group`}>
+    <div className={`flex ${isOwnMessage ? 'justify-end' : 'justify-start'} group relative`}>
       <div className="flex items-end gap-2">
-        {/* Nút thu hồi (chỉ hiện khi hover và có thể thu hồi) */}
-        {canRecall() && (
-          <button
-            onClick={handleRecall}
-            className={`opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded ${
-              isDarkMode ? 'hover:bg-gray-600 text-gray-400' : 'hover:bg-gray-200 text-gray-500'
-            }`}
-            title="Thu hồi tin nhắn"
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
-            </svg>
-          </button>
+        {/* Action buttons (chỉ hiện khi hover) */}
+        {!isSystemMessage && (
+          <div className={`opacity-0 group-hover:opacity-100 transition-opacity flex gap-1 ${
+            isOwnMessage ? 'order-2' : 'order-1'
+          }`}>
+            <button
+              onClick={handleReply}
+              className={`p-1 rounded ${
+                isDarkMode ? 'hover:bg-gray-600 text-gray-400' : 'hover:bg-gray-200 text-gray-500'
+              }`}
+              title="Trả lời"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
+              </svg>
+            </button>
+            
+            {canRecall() && (
+              <button
+                onClick={handleRecall}
+                className={`p-1 rounded ${
+                  isDarkMode ? 'hover:bg-gray-600 text-gray-400' : 'hover:bg-gray-200 text-gray-500'
+                }`}
+                title="Thu hồi tin nhắn"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                </svg>
+              </button>
+            )}
+          </div>
         )}
 
-        <div
-          className={`max-w-xs lg:max-w-md px-4 py-2 rounded-lg ${
-            isSystemMessage
-              ? isDarkMode
-                ? 'bg-gray-700 text-gray-300 text-center mx-auto'
-                : 'bg-gray-100 text-gray-600 text-center mx-auto'
-              : isOwnMessage
-              ? 'bg-blue-600 text-white'
-              : isDarkMode
-              ? 'bg-gray-700 text-gray-100'
-              : 'bg-gray-200 text-gray-800'
-          }`}
-        >
-          {!isSystemMessage && (
-            <div className={`text-xs mb-1 font-semibold ${
-              isOwnMessage
-                ? 'text-blue-100'
+        <div className={`${isOwnMessage ? 'order-1' : 'order-2'}`}>
+          <div
+            className={`max-w-xs lg:max-w-md px-4 py-2 rounded-lg ${
+              isSystemMessage
+                ? isDarkMode
+                  ? 'bg-gray-700 text-gray-300 text-center mx-auto'
+                  : 'bg-gray-100 text-gray-600 text-center mx-auto'
+                : isOwnMessage
+                ? 'bg-blue-600 text-white'
                 : isDarkMode
-                ? 'text-gray-400'
-                : 'text-gray-600'
-            }`}>
-              {message.username}
-            </div>
-          )}
+                ? 'bg-gray-700 text-gray-100'
+                : 'bg-gray-200 text-gray-800'
+            }`}
+          >
+            {!isSystemMessage && (
+              <div className={`text-xs mb-1 font-semibold ${
+                isOwnMessage
+                  ? 'text-blue-100'
+                  : isDarkMode
+                  ? 'text-gray-400'
+                  : 'text-gray-600'
+              }`}>
+                {message.username}
+              </div>
+            )}
+
+            {/* Reply preview */}
+            {message.replyTo && (
+              <div className={`mb-2 p-2 rounded border-l-2 text-xs ${
+                isOwnMessage
+                  ? 'bg-blue-700 border-blue-300'
+                  : isDarkMode
+                  ? 'bg-gray-600 border-gray-400'
+                  : 'bg-gray-100 border-gray-400'
+              }`}>
+                <div className={`font-medium mb-1 ${
+                  isOwnMessage ? 'text-blue-200' : isDarkMode ? 'text-gray-300' : 'text-gray-600'
+                }`}>
+                  ↳ {message.replyTo.username}
+                </div>
+                <div className={`opacity-75 line-clamp-2 ${
+                  isOwnMessage ? 'text-blue-100' : isDarkMode ? 'text-gray-400' : 'text-gray-500'
+                }`}>
+                  {message.replyTo.text || (message.replyTo.file ? `📎 ${message.replyTo.file.originalName}` : 'Tin nhắn')}
+                </div>
+              </div>
+            )}
           
           {/* Hiển thị file nếu có */}
           {message.file && (
@@ -326,19 +429,105 @@ export default function ChatMessage({ message, isOwnMessage, isSystemMessage, on
             </div>
           )}
           
-          {message.text && (
-            <div className="text-sm break-words whitespace-pre-wrap">{message.text}</div>
-          )}
-          
-          <div className={`text-xs mt-1 ${
-            isOwnMessage
-              ? 'text-blue-100'
-              : isDarkMode
-              ? 'text-gray-400'
-              : 'text-gray-500'
-          }`}>
-            {formatTime(message.timestamp)}
+            {message.text && (
+              <div 
+                className="text-sm break-words whitespace-pre-wrap"
+                dangerouslySetInnerHTML={{ __html: renderMentions(message.text) }}
+              />
+            )}
+            
+            <div className={`text-xs mt-1 ${
+              isOwnMessage
+                ? 'text-blue-100'
+                : isDarkMode
+                ? 'text-gray-400'
+                : 'text-gray-500'
+            }`}>
+              {formatTime(message.timestamp)}
+            </div>
           </div>
+
+          {/* Reactions - chỉ hiển thị reactions có người dùng */}
+          {message.reactions && message.reactions.length > 0 && (
+            <div className="flex flex-wrap gap-1 mt-2">
+              {/* Group reactions by emoji */}
+              {Object.entries(
+                message.reactions.reduce((acc: Record<string, any[]>, reaction) => {
+                  if (!acc[reaction.emoji]) acc[reaction.emoji] = []
+                  acc[reaction.emoji].push(reaction)
+                  return acc
+                }, {})
+              ).map(([emoji, reactionList]) => {
+                const userReacted = reactionList.some((r: any) => r.username === message.username)
+                
+                return (
+                  <button
+                    key={emoji}
+                    onClick={() => handleReactionClick(emoji)}
+                    className={`flex items-center gap-1 px-2 py-1 rounded-full text-xs transition ${
+                      userReacted
+                        ? 'bg-blue-500 text-white'
+                        : isDarkMode
+                        ? 'bg-gray-600 hover:bg-gray-500 text-gray-200'
+                        : 'bg-gray-200 hover:bg-gray-300 text-gray-700'
+                    }`}
+                    title={`${reactionList.map((r: any) => r.username).join(', ')}`}
+                  >
+                    <span>{emoji}</span>
+                    <span>{reactionList.length}</span>
+                  </button>
+                )
+              })}
+            </div>
+          )}
+
+          {/* Quick reactions (hiện khi hover) - đặt bên cạnh action buttons */}
+          {!isSystemMessage && (
+            <div className="relative" ref={reactionDropdownRef}>
+              <div className={`opacity-0 group-hover:opacity-100 transition-opacity absolute ${
+                isOwnMessage ? 'right-12' : 'left-12'
+              } top-0 flex gap-1 bg-white dark:bg-gray-800 rounded-full shadow-lg border p-1 z-10`}>
+                {reactions.slice(0, 4).map(emoji => (
+                  <button
+                    key={emoji}
+                    onClick={() => handleReactionClick(emoji)}
+                    className="w-6 h-6 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center justify-center text-xs transition"
+                    title={`React với ${emoji}`}
+                  >
+                    {emoji}
+                  </button>
+                ))}
+                <button
+                  onClick={() => setShowAllReactions(!showAllReactions)}
+                  className="w-6 h-6 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center justify-center text-xs transition"
+                  title="Thêm reaction"
+                >
+                  ➕
+                </button>
+              </div>
+
+              {/* All reactions dropdown */}
+              {showAllReactions && (
+                <div className={`absolute ${
+                  isOwnMessage ? 'right-0' : 'left-0'
+                } top-8 bg-white dark:bg-gray-800 rounded-lg shadow-xl border p-2 z-20 grid grid-cols-8 gap-1 max-w-xs`}>
+                  {allReactions.map(emoji => (
+                    <button
+                      key={emoji}
+                      onClick={() => {
+                        handleReactionClick(emoji)
+                        setShowAllReactions(false)
+                      }}
+                      className="w-8 h-8 rounded hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center justify-center text-sm transition"
+                      title={`React với ${emoji}`}
+                    >
+                      {emoji}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
     </div>
