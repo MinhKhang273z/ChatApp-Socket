@@ -30,12 +30,27 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // --- KẾT NỐI MONGODB ---
-const MONGO_URI = process.env.MONGO_URI; 
+// Hỗ trợ nhiều tên biến môi trường (Railway có thể dùng MONGO_URL, DATABASE_URL, etc.)
+const MONGO_URI = process.env.MONGO_URI || process.env.MONGO_URL || process.env.DATABASE_URL;
 
 if (!MONGO_URI) {
-  console.error("LỖI NGHIÊM TRỌNG: MONGO_URI không được tìm thấy trong file .env");
-  console.error("Hãy đảm bảo file .env tồn tại trong thư mục 'backend' và đã có MONGO_URI.");
+  console.error("LỖI NGHIÊM TRỌNG: MONGO_URI không được tìm thấy trong biến môi trường");
+  console.error("Hãy đảm bảo đã thêm MONGO_URI, MONGO_URL hoặc DATABASE_URL vào Railway Variables.");
   process.exit(1); 
+}
+
+// Debug: Log một phần connection string để kiểm tra (không log password)
+console.log("🔍 Đang kiểm tra MONGO_URI...");
+const uriPrefix = MONGO_URI.substring(0, 20);
+console.log("Prefix của MONGO_URI:", uriPrefix);
+
+// Validate connection string format
+if (!MONGO_URI.startsWith('mongodb://') && !MONGO_URI.startsWith('mongodb+srv://')) {
+  console.error("❌ LỖI: MONGO_URI phải bắt đầu với 'mongodb://' hoặc 'mongodb+srv://'");
+  console.error("Giá trị hiện tại (20 ký tự đầu):", uriPrefix);
+  console.error("Độ dài MONGO_URI:", MONGO_URI.length);
+  console.error("Vui lòng kiểm tra lại giá trị MONGO_URI trong Railway Variables!");
+  process.exit(1);
 }
 
 mongoose.connect(MONGO_URI)
