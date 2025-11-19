@@ -53,6 +53,9 @@ export default function MessageInput({ onSendMessage, onTyping, users, replyingT
   const imageInputRef = useRef<HTMLInputElement>(null)
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const recordingIntervalRef = useRef<NodeJS.Timeout | null>(null)
+  const emojiButtonRef = useRef<HTMLButtonElement>(null)
+  const emojiPickerRef = useRef<HTMLDivElement>(null)
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false)
 
   useEffect(() => {
     return () => {
@@ -64,6 +67,24 @@ export default function MessageInput({ onSendMessage, onTyping, users, replyingT
       }
     }
   }, [])
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        showEmojiPicker &&
+        emojiPickerRef.current &&
+        !emojiPickerRef.current.contains(event.target as Node) &&
+        !emojiButtonRef.current?.contains(event.target as Node)
+      ) {
+        setShowEmojiPicker(false)
+      }
+    }
+
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside)
+    }
+  }, [showEmojiPicker])
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value
@@ -140,6 +161,19 @@ export default function MessageInput({ onSendMessage, onTyping, users, replyingT
   const filteredUsers = users.filter(user => 
     user.toLowerCase().includes(mentionQuery) && user !== inputRef.current?.closest('form')?.dataset.currentUser
   )
+
+  const emojiGroups = [
+    ['😀', '😁', '😂', '🤣', '😊', '😍', '😘', '😎'],
+    ['👍', '👏', '🙏', '💪', '🙌', '🤝', '🔥', '✨'],
+    ['❤️', '💖', '💯', '🎉', '🥳', '✅', '⚡', '🚀']
+  ]
+
+  const handleEmojiSelect = (emoji: string) => {
+    setMessage(prev => prev + emoji)
+    setShowEmojiPicker(false)
+    setError('')
+    inputRef.current?.focus()
+  }
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -636,13 +670,56 @@ export default function MessageInput({ onSendMessage, onTyping, users, replyingT
               )}
             </button>
           ) : (
-            <button
-              type="submit"
-              disabled={(!message.trim() && !selectedFile && !audioBlob) || isUploading || isRecording}
-              className="px-6 py-2 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
-            >
-              {isUploading ? 'Đang gửi...' : 'Gửi'}
-            </button>
+            <div className="relative flex items-center gap-2">
+              {showEmojiPicker && (
+                <div
+                  ref={emojiPickerRef}
+                  className={`absolute bottom-full right-0 mb-2 w-56 rounded-xl shadow-xl border p-3 space-y-2 z-50 ${
+                    isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'
+                  }`}
+                >
+                  {emojiGroups.map((group, idx) => (
+                    <div key={idx} className="flex flex-wrap gap-2">
+                      {group.map((emoji) => (
+                        <button
+                          key={emoji}
+                          type="button"
+                          onClick={() => handleEmojiSelect(emoji)}
+                          className={`flex-1 min-w-[32px] text-xl rounded-lg px-2 py-1 hover:scale-110 transition ${
+                            isDarkMode ? 'bg-gray-700 hover:bg-gray-600' : 'bg-gray-100 hover:bg-gray-200'
+                          }`}
+                        >
+                          {emoji}
+                        </button>
+                      ))}
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <button
+                ref={emojiButtonRef}
+                type="button"
+                onClick={() => setShowEmojiPicker((prev) => !prev)}
+                disabled={isRecording}
+                className={`p-2 rounded-lg transition ${
+                  isDarkMode
+                    ? 'bg-gray-700 hover:bg-gray-600 text-gray-300 disabled:opacity-50'
+                    : 'bg-gray-200 hover:bg-gray-300 text-gray-700 disabled:opacity-50'
+                }`}
+                title="Chèn icon"
+              >
+                <span className="text-2xl">😊</span>
+              </button>
+
+              <button
+                type="submit"
+                disabled={(!message.trim() && !selectedFile && !audioBlob) || isUploading || isRecording}
+                className="px-6 py-2 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+              >
+                {isUploading ? 'Đang gửi...' : 'Gửi'}
+              </button>
+            </div>
           )}
         </div>
 
