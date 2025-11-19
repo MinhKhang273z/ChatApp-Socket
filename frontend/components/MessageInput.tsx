@@ -50,6 +50,7 @@ export default function MessageInput({ onSendMessage, onTyping, users, replyingT
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const imageInputRef = useRef<HTMLInputElement>(null)
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const recordingIntervalRef = useRef<NodeJS.Timeout | null>(null)
 
@@ -161,10 +162,31 @@ export default function MessageInput({ onSendMessage, onTyping, users, replyingT
     setError('')
   }
 
+  const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    if (!file.type.startsWith('image/')) {
+      setError('Chỉ chấp nhận hình ảnh')
+      return
+    }
+
+    if (file.size > 10 * 1024 * 1024) {
+      setError('Ảnh không được vượt quá 10MB')
+      return
+    }
+
+    setSelectedFile(file)
+    setError('')
+  }
+
   const handleRemoveFile = () => {
     setSelectedFile(null)
     if (fileInputRef.current) {
       fileInputRef.current.value = ''
+    }
+    if (imageInputRef.current) {
+      imageInputRef.current.value = ''
     }
   }
 
@@ -273,6 +295,9 @@ export default function MessageInput({ onSendMessage, onTyping, users, replyingT
         setError('')
         if (fileInputRef.current) {
           fileInputRef.current.value = ''
+        }
+        if (imageInputRef.current) {
+          imageInputRef.current.value = ''
         }
       }
     } catch (err) {
@@ -513,6 +538,13 @@ export default function MessageInput({ onSendMessage, onTyping, users, replyingT
             accept="image/*,.pdf,.doc,.docx,.txt"
             className="hidden"
           />
+          <input
+            ref={imageInputRef}
+            type="file"
+            onChange={handleImageSelect}
+            accept="image/*"
+            className="hidden"
+          />
           <button
             type="button"
             onClick={() => fileInputRef.current?.click()}
@@ -526,6 +558,21 @@ export default function MessageInput({ onSendMessage, onTyping, users, replyingT
           >
             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
+            </svg>
+          </button>
+          <button
+            type="button"
+            onClick={() => imageInputRef.current?.click()}
+            disabled={isRecording}
+            className={`p-2 rounded-lg transition ${
+              isDarkMode
+                ? 'bg-gray-700 hover:bg-gray-600 text-gray-300 disabled:opacity-50'
+                : 'bg-gray-200 hover:bg-gray-300 text-gray-700 disabled:opacity-50'
+            }`}
+            title="Gửi ảnh"
+          >
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7h4l2-2h6l2 2h4v12H3V7zm9 3a4 4 0 100 8 4 4 0 000-8z" />
             </svg>
           </button>
 
